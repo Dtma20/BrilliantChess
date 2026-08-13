@@ -16,7 +16,11 @@ from brilliant_chess.application.analyze_position import (
     PositionAnalysis,
     analyze_position,
 )
-from brilliant_chess.application.choose_brilliant_move import choose_brilliant_move
+from brilliant_chess.application.choose_brilliant_move import (
+    CandidateAudit,
+    PositionHistory,
+    choose_brilliant_move,
+)
 from brilliant_chess.application.play_match import (
     MatchAudit,
     MatchProfile,
@@ -59,6 +63,7 @@ from brilliant_chess.interfaces.web.schemas import (
     board_out,
     evaluation_text,
     gate_out,
+    sacrifice_out,
 )
 from brilliant_chess.ports.engine import ChessEngine, PlayableEngine
 
@@ -219,7 +224,15 @@ def step_match(
         rules = request.app.state.container.rules
         lab = request.app.state.container.settings.web.lab
         choice = (
-            choose_brilliant_move(engine, board, view.position, rules, lab.strict_budget())
+            choose_brilliant_move(
+                engine,
+                board,
+                # Sem o caminho ate aqui, nem o tabuleiro nem o motor veem
+                # tripla repeticao ou a regra dos cinquenta lances.
+                PositionHistory(state.initial_fen, state.moves_uci),
+                rules,
+                lab.strict_budget(),
+            )
             if profile.policy is play_match.MatchPolicy.STRICT_V1
             else None
         )
@@ -243,15 +256,7 @@ def step_match(
                 if profile.policy is play_match.MatchPolicy.STRICT_V1
                 else SelectionKind.NORMAL
             )
-        audit = (
-            None
-            if audit_selected is None
-            else MatchAudit(
-                audit_selected.decision,
-                audit_selected.best_defense_uci,
-                audit_selected.stability_depth,
-            )
-        )
+        audit = None if audit_selected is None else _match_audit(audit_selected)
         return match_out(
             board, store.save(play_match.record_move(board, state, move, selection, audit))
         )
@@ -415,18 +420,38 @@ def _match_move_out(move: play_match.MatchMove) -> MatchMoveOut:
         san=move.san,
         selection=move.selection,
         fallback=move.selection is SelectionKind.FALLBACK,
-        audit=None if move.audit is None else _audit_out(move),
+        audit=None if move.audit is None else _audit_out(move.audit, move.uci, move.san),
     )
 
 
-def _audit_out(move: play_match.MatchMove) -> CandidateAuditOut:
-    assert move.audit is not None
-    decision = move.audit.decision
+def _match_audit(audited: CandidateAudit) -> MatchAudit:
+    return MatchAudit(
+        decision=audited.decision,
+        best_defense_uci=audited.best_defense_uci,
+        stability_depth=audited.stability_depth,
+        best_defense_san=audited.best_defense_san,
+        acceptance_san=audited.acceptance_san,
+        defense_accepted=audited.defense_accepted,
+        material_conceded=audited.material_conceded,
+        terminal_status=audited.terminal_status,
+    )
+
+
+def _audit_out(audit: MatchAudit, uci: str, san: str) -> CandidateAuditOut:
+    decision = audit.decision
     return CandidateAuditOut(
-        selected_uci=move.uci,
-        selected_san=move.san,
+        selected_uci=uci,
+        selected_san=san,
         score=decision.score,
         rule_set_version=decision.rule_set_version,
         gates=[gate_out(gate) for gate in decision.gates],
         reason_codes=list(decision.reasons),
+        sacrifice=sacrifice_out(
+            decision.sacrifice,
+            acceptance_san=audit.acceptance_san,
+            accepted_by_best_defense=audit.defense_accepted,
+            material_conceded=audit.material_conceded,
+        ),
+        best_defense_san=audit.best_defense_san,
+        terminal_status=audit.terminal_status,
     )

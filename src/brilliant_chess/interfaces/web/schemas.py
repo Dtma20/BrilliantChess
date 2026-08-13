@@ -7,10 +7,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from brilliant_chess.application import play_match
 from brilliant_chess.application.analyze_position import Candidate, PositionAnalysis
 from brilliant_chess.domain.gates import GateResult
-from brilliant_chess.domain.values import Color, GameStatus
+from brilliant_chess.domain.sacrifice import SacrificeEvidence
+from brilliant_chess.domain.values import Color, GameStatus, PieceType, SacrificeKind
 from brilliant_chess.ports.board import BoardView
 
-API_SCHEMA_VERSION = "1"
+#: Versao 2 acrescenta a evidencia de sacrificio e o desfecho terminal a
+#: auditoria de cada lance do laboratorio.
+API_SCHEMA_VERSION = "2"
 
 
 class _Model(BaseModel):
@@ -84,6 +87,19 @@ class GateOut(_Model):
     explanation: str
 
 
+class SacrificeOut(_Model):
+    """Peca oferecida e como o adversario poderia aceitar."""
+
+    kind: SacrificeKind
+    offered_square: str
+    offered_piece: PieceType
+    nominal_value: float
+    confidence: float
+    acceptance_san: list[str]
+    accepted_by_best_defense: bool
+    material_conceded: float
+
+
 class CandidateAuditOut(_Model):
     selected_uci: str
     selected_san: str
@@ -91,6 +107,10 @@ class CandidateAuditOut(_Model):
     rule_set_version: str
     gates: list[GateOut]
     reason_codes: list[str]
+    sacrifice: SacrificeOut | None = None
+    best_defense_san: str | None = None
+    #: Desfecho imediato do lance, quando ele encerra a partida.
+    terminal_status: GameStatus | None = None
 
 
 class MatchMoveOut(_Model):
@@ -220,6 +240,33 @@ def gate_out(gate: GateResult) -> GateOut:
         measured=gate.measured_value,
         threshold=gate.threshold,
         explanation=gate.explanation,
+    )
+
+
+def sacrifice_out(
+    evidence: SacrificeEvidence,
+    *,
+    acceptance_san: tuple[str, ...],
+    accepted_by_best_defense: bool,
+    material_conceded: float,
+) -> SacrificeOut | None:
+    """``None`` quando nenhuma peca foi oferecida: ausencia nao e evidencia."""
+    if (
+        not evidence.detected
+        or evidence.kind is None
+        or evidence.offered_piece_square is None
+        or evidence.offered_piece_type is None
+    ):
+        return None
+    return SacrificeOut(
+        kind=evidence.kind,
+        offered_square=evidence.offered_piece_square,
+        offered_piece=evidence.offered_piece_type,
+        nominal_value=evidence.nominal_value,
+        confidence=evidence.confidence,
+        acceptance_san=list(acceptance_san),
+        accepted_by_best_defense=accepted_by_best_defense,
+        material_conceded=material_conceded,
     )
 
 

@@ -9,7 +9,7 @@ from brilliant_chess.domain.errors import DomainError
 from brilliant_chess.domain.models import Move
 from brilliant_chess.domain.scoring import BrilliantDecision
 from brilliant_chess.domain.strength import strength_by_key
-from brilliant_chess.domain.values import Color, GameStatus
+from brilliant_chess.domain.values import GAME_STATUS_TEXTS, Color, GameStatus
 from brilliant_chess.ports.board import BoardService, BoardView
 
 
@@ -33,9 +33,16 @@ class MatchProfile:
 
 @dataclass(frozen=True)
 class MatchAudit:
+    """Evidencia medida do lance escolhido, tal como sera exibida e exportada."""
+
     decision: BrilliantDecision
     best_defense_uci: str | None
     stability_depth: int | None
+    best_defense_san: str | None = None
+    acceptance_san: tuple[str, ...] = ()
+    defense_accepted: bool = False
+    material_conceded: float = 0.0
+    terminal_status: GameStatus | None = None
 
 
 @dataclass(frozen=True)
@@ -134,10 +141,4 @@ def result_text(board: BoardService, state: MatchState) -> str:
     return "Partida em andamento"
 
 
-_RESULT_TEXTS: dict[GameStatus, str] = {
-    GameStatus.CHECKMATE: "Xeque-mate",
-    GameStatus.STALEMATE: "Empate por afogamento",
-    GameStatus.DRAW_INSUFFICIENT_MATERIAL: "Empate por material insuficiente",
-    GameStatus.DRAW_FIFTY_MOVES: "Empate pela regra dos cinquenta lances",
-    GameStatus.DRAW_THREEFOLD_REPETITION: "Empate por tripla repeticao",
-}
+_RESULT_TEXTS: dict[GameStatus, str] = GAME_STATUS_TEXTS

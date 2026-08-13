@@ -7,6 +7,12 @@
  * porque o próprio FastAPI serve estes arquivos.
  */
 
+/**
+ * Versão de contrato que este cliente conhece. Um valor diferente vindo do
+ * servidor não derruba a página: ela avisa e segue desenhando o que entende.
+ */
+export const API_SCHEMA_VERSION = "2"
+
 export type Color = "white" | "black"
 
 export type GameStatus =
@@ -22,6 +28,22 @@ export type MatchPolicy = "normal" | "strict_v1"
 export type SelectionKind = "normal" | "strict_v1" | "near_brilliant" | "fallback"
 
 export type GateStatus = "passed" | "failed" | "indeterminate"
+
+export type SacrificeKind =
+  | "destination_offer"
+  | "left_hanging"
+  | "exchange_sacrifice"
+  | "declined_recapture"
+  | "clearance_or_deflection"
+
+export type PieceName = "pawn" | "knight" | "bishop" | "rook" | "queen" | "king"
+
+/**
+ * O que chega pelo fio. Um servidor mais novo pode mandar um valor que este
+ * cliente ainda não conhece, e nenhuma tela pode quebrar por causa disso.
+ * `string & {}` mantém o autocompletar dos valores conhecidos.
+ */
+export type Wire<T extends string> = T | (string & {})
 
 export type MeasuredValue = number | string | boolean | null
 
@@ -56,10 +78,22 @@ export interface Game {
 
 export interface Gate {
   gate_id: string
-  status: GateStatus
+  status: Wire<GateStatus>
   measured: MeasuredValue
   threshold: MeasuredValue
   explanation: string
+}
+
+/** Peça oferecida e as capturas legais que aceitariam a oferta. */
+export interface Sacrifice {
+  kind: Wire<SacrificeKind>
+  offered_square: string
+  offered_piece: Wire<PieceName>
+  nominal_value: number
+  confidence: number
+  acceptance_san: string[]
+  accepted_by_best_defense: boolean
+  material_conceded: number
 }
 
 export interface CandidateAudit {
@@ -69,13 +103,16 @@ export interface CandidateAudit {
   rule_set_version: string
   gates: Gate[]
   reason_codes: string[]
+  sacrifice: Sacrifice | null
+  best_defense_san: string | null
+  terminal_status: Wire<GameStatus> | null
 }
 
 export interface MatchMove {
   color: Color
   uci: string
   san: string
-  selection: SelectionKind
+  selection: Wire<SelectionKind>
   fallback: boolean
   audit: CandidateAudit | null
 }

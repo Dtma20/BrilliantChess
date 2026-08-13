@@ -15,11 +15,12 @@ from brilliant_chess.application.choose_brilliant_move import BrilliantMoveChoic
 from brilliant_chess.application.play_match import MatchPolicy, MatchProfile
 from brilliant_chess.bootstrap.container import build_container
 from brilliant_chess.domain.models import Move
-from brilliant_chess.domain.sacrifice import NO_SACRIFICE
+from brilliant_chess.domain.sacrifice import NO_SACRIFICE, SacrificeEvidence
 from brilliant_chess.domain.scoring import BrilliantDecision, ScoreBreakdown
-from brilliant_chess.domain.values import Color
+from brilliant_chess.domain.values import Color, GameStatus, PieceType, SacrificeKind
 from brilliant_chess.interfaces.web import routes
 from brilliant_chess.interfaces.web.app import WEB_DIST_ENV_VAR, create_app
+from brilliant_chess.interfaces.web.schemas import API_SCHEMA_VERSION
 from tests.fakes.stub_engine import StubPairSession, StubSession
 
 MATE_IN_ONE_FEN = "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1"
@@ -160,7 +161,7 @@ def test_strict_side_uses_selected_move_and_compact_match_audit(client, monkeypa
     monkeypatch.setattr(
         routes,
         "choose_brilliant_move",
-        lambda *_: BrilliantMoveChoice(Move("a2a3", "a3"), selected, (selected,)),
+        lambda *_, **__: BrilliantMoveChoice(Move("a2a3", "a3"), selected, (selected,)),
     )
 
     result = client.post(f"/api/match/{create_strict_white_match(client)['match_id']}/step").json()
@@ -173,7 +174,7 @@ def test_strict_side_uses_selected_move_and_compact_match_audit(client, monkeypa
 
 def test_strict_side_falls_back_to_its_configured_strength(client, monkeypatch):
     monkeypatch.setattr(
-        routes, "choose_brilliant_move", lambda *_: BrilliantMoveChoice(None, None, ())
+        routes, "choose_brilliant_move", lambda *_, **__: BrilliantMoveChoice(None, None, ())
     )
     match = create_strict_white_match(client)
 
@@ -211,7 +212,7 @@ def test_strict_side_uses_safe_near_brilliant_before_normal_fallback(client, mon
     monkeypatch.setattr(
         routes,
         "choose_brilliant_move",
-        lambda *_: BrilliantMoveChoice(None, None, (near,), near_selected=near),
+        lambda *_, **__: BrilliantMoveChoice(None, None, (near,), near_selected=near),
     )
 
     result = client.post(f"/api/match/{create_strict_white_match(client)['match_id']}/step").json()
@@ -220,6 +221,116 @@ def test_strict_side_uses_safe_near_brilliant_before_normal_fallback(client, mon
     assert result["moves"][0]["uci"] == "a2a3"
     assert result["moves"][0]["audit"]["selected_uci"] == "a2a3"
     assert client.app.state.engine_pair_session.white.calls == []
+
+
+def test_match_audit_carries_the_measured_sacrifice_evidence(client, monkeypatch):
+    candidate = Candidate(
+        move_uci="a2a3",
+        move_san="a3",
+        rank=1,
+        expected_points_after=0.6,
+        expected_points_loss=0.0,
+        centipawns=40,
+        mate_in=None,
+        depth=20,
+        nodes=100,
+        pv_uci=("a2a3",),
+        pv_san=("a3",),
+    )
+    evidence = SacrificeEvidence(
+        detected=True,
+        kind=SacrificeKind.LEFT_HANGING,
+        offered_piece_square="b1",
+        offered_piece_type=PieceType.ROOK,
+        nominal_value=5.0,
+        acceptance_moves=("f5b1",),
+        confidence=0.55,
+    )
+    decision = BrilliantDecision(
+        is_brilliant=False,
+        selectable=False,
+        score=61.0,
+        gates=(),
+        sacrifice=evidence,
+        breakdown=ScoreBreakdown(10.0, 10.0, 10.0, 10.0, 10.0),
+        rule_set_version="strict_v1",
+    )
+    near = CandidateAudit(
+        candidate,
+        decision,
+        best_defense_uci="f5b1",
+        stability_depth=28,
+        best_defense_san="Bxb1",
+        acceptance_san=("Bxb1",),
+        defense_accepted=True,
+        material_conceded=5.0,
+        terminal_status=None,
+    )
+    monkeypatch.setattr(
+        routes,
+        "choose_brilliant_move",
+        lambda *_, **__: BrilliantMoveChoice(None, None, (near,), near_selected=near),
+    )
+
+    result = client.post(f"/api/match/{create_strict_white_match(client)['match_id']}/step").json()
+    audit = result["moves"][0]["audit"]
+
+    assert audit["best_defense_san"] == "Bxb1"
+    assert audit["terminal_status"] is None
+    assert audit["sacrifice"] == {
+        "kind": "left_hanging",
+        "offered_square": "b1",
+        "offered_piece": "rook",
+        "nominal_value": 5.0,
+        "confidence": 0.55,
+        "acceptance_san": ["Bxb1"],
+        "accepted_by_best_defense": True,
+        "material_conceded": 5.0,
+    }
+
+
+def test_match_audit_omits_sacrifice_when_none_was_detected(client, monkeypatch):
+    candidate = Candidate(
+        move_uci="a2a3",
+        move_san="a3",
+        rank=1,
+        expected_points_after=0.5,
+        expected_points_loss=0.0,
+        centipawns=0,
+        mate_in=None,
+        depth=20,
+        nodes=100,
+        pv_uci=("a2a3",),
+        pv_san=("a3",),
+    )
+    decision = BrilliantDecision(
+        is_brilliant=False,
+        selectable=False,
+        score=12.0,
+        gates=(),
+        sacrifice=NO_SACRIFICE,
+        breakdown=ScoreBreakdown(0.0, 0.0, 0.0, 0.0, 0.0),
+        rule_set_version="strict_v1",
+    )
+    near = CandidateAudit(
+        candidate,
+        decision,
+        best_defense_uci=None,
+        stability_depth=None,
+        terminal_status=GameStatus.DRAW_THREEFOLD_REPETITION,
+    )
+    monkeypatch.setattr(
+        routes,
+        "choose_brilliant_move",
+        lambda *_, **__: BrilliantMoveChoice(None, None, (near,), near_selected=near),
+    )
+
+    audit = client.post(f"/api/match/{create_strict_white_match(client)['match_id']}/step").json()[
+        "moves"
+    ][0]["audit"]
+
+    assert audit["sacrifice"] is None
+    assert audit["terminal_status"] == "draw_threefold_repetition"
 
 
 def test_capped_match_refuses_one_more_step(client):
@@ -427,7 +538,7 @@ def test_board_endpoint_rejects_bad_fen(client):
 
 def test_analysis_returns_ranked_candidates_and_arrows(client):
     payload = client.post("/api/analyze", json={"fen": STARTING_FEN}).json()
-    assert payload["schema_version"] == "1"
+    assert payload["schema_version"] == API_SCHEMA_VERSION
     assert payload["side_to_move"] == "white"
     assert len(payload["candidates"]) == 3
     assert [item["rank"] for item in payload["candidates"]] == [1, 2, 3]

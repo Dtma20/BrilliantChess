@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from brilliant_chess.application import play_game, play_match
 from brilliant_chess.domain.strength import strength_by_key
-from brilliant_chess.domain.values import Color, GameStatus
+from brilliant_chess.domain.values import Color, GameStatus, GateStatus
 from brilliant_chess.ports.board import BoardView
 
 
@@ -100,6 +100,11 @@ def _movetext_with_comments(
 
 
 def _selection_comment(state: play_match.MatchState, move: play_match.MatchMove) -> str:
+    """Comentario de um lance: pares ``chave=valor`` legiveis por pessoa e script.
+
+    Somente evidencia medida entra. Um campo ausente significa "nao medido", nao
+    "zero", por isso nada e preenchido com valor neutro.
+    """
     profile = state.white if move.color is Color.WHITE else state.black
     if move.selection is play_match.SelectionKind.NORMAL:
         return "{policy=normal selection=normal}"
@@ -107,11 +112,36 @@ def _selection_comment(state: play_match.MatchState, move: play_match.MatchMove)
         return "{policy=strict_v1 selection=fallback reason=no_eligible_candidate}"
     if move.audit is None:
         return f"{{policy={profile.policy.value} selection={move.selection.value}}}"
-    decision = move.audit.decision
-    return (
-        f"{{policy={profile.policy.value} selection={move.selection.value} "
-        f"score={decision.score:.2f} rule_set={decision.rule_set_version}}}"
-    )
+    fields = [
+        f"policy={profile.policy.value}",
+        f"selection={move.selection.value}",
+        f"score={move.audit.decision.score:.2f}",
+        f"rule_set={move.audit.decision.rule_set_version}",
+        *_evidence_fields(move.audit),
+    ]
+    return "{" + " ".join(fields) + "}"
+
+
+def _evidence_fields(audit: play_match.MatchAudit) -> list[str]:
+    fields: list[str] = []
+    evidence = audit.decision.sacrifice
+    if evidence.detected and evidence.kind is not None:
+        offered = evidence.offered_piece_type
+        piece = "" if offered is None else f"/{offered.value}"
+        fields.append(f"sacrifice={evidence.kind.value}@{evidence.offered_piece_square}{piece}")
+        fields.append(f"accepted={'yes' if audit.defense_accepted else 'no'}")
+        if audit.defense_accepted:
+            fields.append(f"conceded={audit.material_conceded:.2f}")
+    if audit.best_defense_san is not None:
+        fields.append(f"best_defense={audit.best_defense_san}")
+    unmet = [
+        gate.gate_id.value for gate in audit.decision.gates if gate.status is not GateStatus.PASSED
+    ]
+    if unmet:
+        fields.append("unmet=" + ",".join(unmet))
+    if audit.terminal_status is not None:
+        fields.append(f"end={audit.terminal_status.value}")
+    return fields
 
 
 def _result(status: GameStatus, side_to_move: Color) -> str:

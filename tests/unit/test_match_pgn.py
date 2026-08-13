@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from brilliant_chess.adapters.board.service import STARTING_FEN, PythonChessBoardService
@@ -11,9 +13,17 @@ from brilliant_chess.application.play_match import (
     MatchState,
     SelectionKind,
 )
-from brilliant_chess.domain.sacrifice import NO_SACRIFICE
+from brilliant_chess.domain.gates import GateResult
+from brilliant_chess.domain.sacrifice import NO_SACRIFICE, SacrificeEvidence
 from brilliant_chess.domain.scoring import BrilliantDecision, ScoreBreakdown
-from brilliant_chess.domain.values import Color
+from brilliant_chess.domain.values import (
+    Color,
+    GameStatus,
+    GateId,
+    GateStatus,
+    PieceType,
+    SacrificeKind,
+)
 from brilliant_chess.interfaces.web.pgn import build_match_pgn
 
 
@@ -88,6 +98,86 @@ def test_cap_uses_draw_result_and_experimental_comment(board):
     assert '[Result "1/2-1/2"]' in text
     assert "{result=experimental_move_limit fullmoves=100}" in text
     assert text.rstrip().endswith("1/2-1/2")
+
+
+def test_match_pgn_records_the_measured_sacrifice_evidence(board):
+    evidence = SacrificeEvidence(
+        detected=True,
+        kind=SacrificeKind.LEFT_HANGING,
+        offered_piece_square="b1",
+        offered_piece_type=PieceType.ROOK,
+        nominal_value=5.0,
+        acceptance_moves=("f5b1",),
+        confidence=0.55,
+    )
+    audit = MatchAudit(
+        decision=BrilliantDecision(
+            is_brilliant=False,
+            selectable=False,
+            score=48.0,
+            gates=(
+                GateResult(GateId.LEGAL, GateStatus.PASSED, True, True, "ok"),
+                GateResult(GateId.SACRIFICE, GateStatus.FAILED, 5.0, 2.75, "confianca baixa"),
+            ),
+            sacrifice=evidence,
+            breakdown=ScoreBreakdown(0.0, 0.0, 0.0, 0.0, 0.0),
+            rule_set_version="strict_v1",
+        ),
+        best_defense_uci="f5b1",
+        stability_depth=28,
+        best_defense_san="Bxb1",
+        acceptance_san=("Bxb1",),
+        defense_accepted=True,
+        material_conceded=5.0,
+    )
+    state = replace(
+        match_state(),
+        moves=(
+            MatchMove(Color.WHITE, "e2e4", "e4", SelectionKind.NEAR_BRILLIANT, audit),
+            *match_state().moves[1:],
+        ),
+    )
+    initial = board.view(STARTING_FEN, ())
+
+    text = build_match_pgn(
+        state,
+        initial,
+        board.view(STARTING_FEN, state.moves_uci),
+        standard_fen=STARTING_FEN,
+    )
+
+    assert "selection=near_brilliant" in text
+    assert "sacrifice=left_hanging@b1/rook" in text
+    assert "accepted=yes" in text
+    assert "conceded=5.00" in text
+    assert "best_defense=Bxb1" in text
+    assert "unmet=GATE_SACRIFICE_001" in text
+
+
+def test_match_pgn_records_an_immediate_terminal_draw(board):
+    audit = MatchAudit(
+        decision=decision(12.0),
+        best_defense_uci=None,
+        stability_depth=None,
+        terminal_status=GameStatus.DRAW_THREEFOLD_REPETITION,
+    )
+    state = replace(
+        match_state(),
+        moves=(
+            MatchMove(Color.WHITE, "e2e4", "e4", SelectionKind.NEAR_BRILLIANT, audit),
+            *match_state().moves[1:],
+        ),
+    )
+    initial = board.view(STARTING_FEN, ())
+
+    text = build_match_pgn(
+        state,
+        initial,
+        board.view(STARTING_FEN, state.moves_uci),
+        standard_fen=STARTING_FEN,
+    )
+
+    assert "end=draw_threefold_repetition" in text
 
 
 def test_match_pgn_includes_custom_fen_and_unfinished_result(board):
