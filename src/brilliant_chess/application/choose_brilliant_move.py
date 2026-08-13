@@ -137,7 +137,9 @@ def _audit_candidate(context: _AuditContext, candidate: Candidate) -> CandidateA
     if defense is not None:
         defender_points_from_mover_pov = defense.evaluation.flipped().expected_points
         defense_loss = expected_points_loss(
-            candidate.expected_points_after, defender_points_from_mover_pov
+            candidate.expected_points_after,
+            defender_points_from_mover_pov,
+            tolerance=rules.robustness.max_ep_drift_on_deeper_search,
         ).value
         depends_on_opponent_error = (
             len(candidate.pv_uci) < _PV_WITH_REPLY_LENGTH

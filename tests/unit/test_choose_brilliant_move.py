@@ -35,6 +35,7 @@ def budget(*, stability: AnalysisBudget | None = STABILITY) -> StrictSearchBudge
 def engine_for(
     *,
     best_defense: bool = True,
+    best_defense_centipawns: int = -40,
     stability: bool = True,
     candidate_pv: tuple[str, ...] = ("h5h7", "h8h7"),
 ) -> ScriptedEngine:
@@ -51,7 +52,12 @@ def engine_for(
     }
     if best_defense:
         script[ScriptKey(after.fen, (), BEST_DEFENSE.nodes)] = (
-            evaluation("h8h7", Color.BLACK, centipawns=-40, pv=("h8h7",)),
+            evaluation(
+                "h8h7",
+                Color.BLACK,
+                centipawns=best_defense_centipawns,
+                pv=("h8h7",),
+            ),
         )
     if stability:
         script[ScriptKey(position.fen, ("h5h7",), STABILITY.nodes)] = (
@@ -69,6 +75,23 @@ def test_selects_candidate_when_all_seven_gates_pass(rules):
     assert choice.move.uci == "h5h7"
     assert choice.selected is not None
     assert all(gate.status is GateStatus.PASSED for gate in choice.selected.decision.gates)
+
+
+def test_best_defense_search_accepts_small_cross_search_ep_improvement(rules):
+    choice = choose_brilliant_move(
+        engine_for(best_defense_centipawns=-60),
+        PythonChessBoardService(),
+        Position.from_fen(POSITION_FEN),
+        rules,
+        budget(),
+    )
+
+    assert choice.move is not None
+    soundness = next(
+        gate for gate in choice.selected.decision.gates if gate.gate_id is GateId.SOUNDNESS
+    )
+    assert soundness.status is GateStatus.PASSED
+    assert soundness.measured_value == 0.0
 
 
 def test_missing_best_defense_keeps_candidate_but_rejects_it(rules):

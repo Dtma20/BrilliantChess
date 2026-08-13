@@ -97,6 +97,15 @@ Uma candidata so e brilhante se **todos** os portoes retornarem `passed`.
 - Testes: `test_stability_without_budget_is_indeterminate_only_near_a_threshold`,
   `test_stability_fails_on_drift_or_refuted_mechanism`.
 
+### Comparacao com a melhor defesa
+
+O EP da candidata confirmada e o EP apos a melhor defesa vem de buscas
+independentes, com raizes diferentes. Ao calcular a perda apos a melhor defesa,
+`strict_v1` aceita uma melhoria negativa dentro de
+`robustness.max_ep_drift_on_deeper_search` e a normaliza para zero. A margem
+nao vale para o ranking dentro da mesma confirmacao, que continua usando a
+tolerancia numerica global de `1e-6` e acusa inversoes reais de ordem.
+
 ## Deteccao de sacrificio
 
 Valores materiais padrao: peao `1.0`, cavalo `3.2`, bispo `3.3`, torre `5.0`,
