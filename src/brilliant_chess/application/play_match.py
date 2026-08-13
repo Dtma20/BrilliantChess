@@ -21,6 +21,7 @@ class MatchPolicy(StrEnum):
 class SelectionKind(StrEnum):
     NORMAL = "normal"
     STRICT_V1 = "strict_v1"
+    NEAR_BRILLIANT = "near_brilliant"
     FALLBACK = "fallback"
 
 

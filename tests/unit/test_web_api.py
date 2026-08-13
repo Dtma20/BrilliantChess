@@ -184,6 +184,44 @@ def test_strict_side_falls_back_to_its_configured_strength(client, monkeypatch):
     assert result["moves"][0]["audit"] is None
 
 
+def test_strict_side_uses_safe_near_brilliant_before_normal_fallback(client, monkeypatch):
+    candidate = Candidate(
+        move_uci="a2a3",
+        move_san="a3",
+        rank=2,
+        expected_points_after=0.5,
+        expected_points_loss=0.02,
+        centipawns=10,
+        mate_in=None,
+        depth=20,
+        nodes=100,
+        pv_uci=("a2a3",),
+        pv_san=("a3",),
+    )
+    decision = BrilliantDecision(
+        is_brilliant=False,
+        selectable=False,
+        score=50.0,
+        gates=(),
+        sacrifice=NO_SACRIFICE,
+        breakdown=ScoreBreakdown(10.0, 10.0, 10.0, 10.0, 10.0),
+        rule_set_version="strict_v1",
+    )
+    near = CandidateAudit(candidate, decision, best_defense_uci="a7a6", stability_depth=20)
+    monkeypatch.setattr(
+        routes,
+        "choose_brilliant_move",
+        lambda *_: BrilliantMoveChoice(None, None, (near,), near_selected=near),
+    )
+
+    result = client.post(f"/api/match/{create_strict_white_match(client)['match_id']}/step").json()
+
+    assert result["moves"][0]["selection"] == "near_brilliant"
+    assert result["moves"][0]["uci"] == "a2a3"
+    assert result["moves"][0]["audit"]["selected_uci"] == "a2a3"
+    assert client.app.state.engine_pair_session.white.calls == []
+
+
 def test_capped_match_refuses_one_more_step(client):
     match = create_match_with_max_plies(client, max_plies=1)
 

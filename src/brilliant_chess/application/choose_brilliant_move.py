@@ -29,6 +29,14 @@ from brilliant_chess.ports.engine import ChessEngine
 
 _OPPONENT_REPLY_INDEX = 1
 _PV_WITH_REPLY_LENGTH = 2
+_NEAR_BRILLIANT_SAFETY_GATES = frozenset(
+    {
+        GateId.LEGAL,
+        GateId.SOUNDNESS,
+        GateId.NOT_BAD_AFTER,
+        GateId.STABILITY,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -54,6 +62,7 @@ class BrilliantMoveChoice:
     move: Move | None
     selected: CandidateAudit | None
     candidates: tuple[CandidateAudit, ...]
+    near_selected: CandidateAudit | None = None
 
 
 @dataclass(frozen=True)
@@ -107,11 +116,43 @@ def choose_brilliant_move(
         ),
     )
     selected = eligible[0] if eligible else None
+    near_selected = None if selected is not None else _select_near_brilliant(audits, rules)
     move = None
     if selected is not None:
         move = Move(selected.candidate.move_uci, selected.candidate.move_san)
     rejected = tuple(audit for audit in audits if not audit.decision.selectable)
-    return BrilliantMoveChoice(move=move, selected=selected, candidates=tuple(eligible) + rejected)
+    return BrilliantMoveChoice(
+        move=move,
+        selected=selected,
+        candidates=tuple(eligible) + rejected,
+        near_selected=near_selected,
+    )
+
+
+def _select_near_brilliant(
+    audits: tuple[CandidateAudit, ...], rules: RuleSet
+) -> CandidateAudit | None:
+    """Escolhe uma candidata auditada que falhou apenas em criterios nao-seguranca."""
+    safe = (
+        audit
+        for audit in audits
+        if audit.candidate.expected_points_loss <= rules.selection.safe_max_expected_points_loss
+        and _near_brilliant_safety_gates_passed(audit)
+    )
+    return min(
+        safe,
+        key=lambda audit: (
+            -audit.decision.score,
+            audit.candidate.expected_points_loss,
+            audit.candidate.move_uci,
+        ),
+        default=None,
+    )
+
+
+def _near_brilliant_safety_gates_passed(audit: CandidateAudit) -> bool:
+    statuses = {gate.gate_id: gate.passed for gate in audit.decision.gates}
+    return all(statuses.get(gate_id, False) for gate_id in _NEAR_BRILLIANT_SAFETY_GATES)
 
 
 def _audit_candidate(context: _AuditContext, candidate: Candidate) -> CandidateAudit:

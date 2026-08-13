@@ -160,12 +160,18 @@ automaticamente uma torre oferecida: evidencia sem valor nao pontua.
 Camadas, nesta ordem:
 
 1. candidatas com `is_brilliant = True`;
-2. candidatas com `EP_loss <= selection.safe_max_expected_points_loss` (`0.03`);
+2. `near_brilliant`: candidata auditada com `EP_loss <=
+   selection.safe_max_expected_points_loss` (`0.03`) e com os portoes de
+   legalidade, solidez contra a melhor defesa, posicao resultante e estabilidade
+   aprovados;
 3. melhor jogada objetiva.
 
-Desempates: maior brilhantismo, menor `EP_loss`, maior EP apos a melhor defesa,
-maior estabilidade e, por ultimo, ordem UCI estavel. A primeira camada nunca e
-relaxada para forcar um sacrificio.
+Uma `near_brilliant` pode falhar nos criterios de classificacao (por exemplo,
+na exigencia de sacrificio), mas nunca nos criterios de seguranca. Ela e marcada
+como `selection=near_brilliant` no retorno da API e no PGN, sem receber o rotulo
+de brilhante. Dentro dessa camada, os desempates sao maior score diagnostico,
+menor `EP_loss` e ordem UCI estavel. A primeira camada nunca e relaxada para
+forcar um sacrificio.
 
 ## Perfil por rating
 
@@ -179,3 +185,4 @@ aproximado.
 | Versao | Data | Mudanca |
 | --- | --- | --- |
 | `strict_v1` | 2026-08-12 | Definicao inicial dos sete portoes, mapeamentos de EP e pesos de pontuacao. |
+| `strict_v1` | 2026-08-13 | Fallback `near_brilliant` seguro antes da jogada normal do perfil. |

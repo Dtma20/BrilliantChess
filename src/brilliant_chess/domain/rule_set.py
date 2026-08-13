@@ -76,7 +76,7 @@ class ScoringWeights:
 
 @dataclass(frozen=True)
 class SelectionThresholds:
-    """Camada 2 do seletor: jogadas objetivamente seguras (ver secao 15)."""
+    """Camada ``near_brilliant``: jogadas auditadas e objetivamente seguras."""
 
     safe_max_expected_points_loss: float = 0.03
     #: Margem de EP usada para contar alternativas equivalentes (unicidade).

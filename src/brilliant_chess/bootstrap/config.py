@@ -82,6 +82,8 @@ class ScoringModel(_Strict):
 
 
 class SelectionModel(_Strict):
+    """Limiares para a selecao de candidatas quase brilhantes."""
+
     safe_max_expected_points_loss: float = Field(default=0.03, ge=0.0, le=1.0)
     uniqueness_equivalence_margin: float = Field(default=0.02, ge=0.0, le=1.0)
 

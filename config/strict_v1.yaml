@@ -45,6 +45,7 @@ rules:
     robustness_weight: 10
 
   selection:
+    # Limite de qualidade objetiva para o fallback near_brilliant.
     safe_max_expected_points_loss: 0.03
     uniqueness_equivalence_margin: 0.02
 

@@ -31,7 +31,7 @@ from brilliant_chess.domain.errors import (
     InvalidFenError,
     InvalidMoveError,
 )
-from brilliant_chess.domain.models import AnalysisBudget, Position
+from brilliant_chess.domain.models import AnalysisBudget, Move, Position
 from brilliant_chess.domain.strength import STRENGTH_LEVELS, strength_by_key
 from brilliant_chess.domain.values import Color
 from brilliant_chess.interfaces.web.engine_pair_session import EnginePairSession
@@ -223,27 +223,34 @@ def step_match(
             if profile.policy is play_match.MatchPolicy.STRICT_V1
             else None
         )
-        selected = choice.selected if choice is not None else None
-        move = (
-            choice.move
-            if choice is not None and choice.move is not None
-            else cast(PlayableEngine, engine).play_move(
+        strict_selected = choice.selected if choice is not None else None
+        near_selected = choice.near_selected if choice is not None else None
+        audit_selected = None
+        if choice is not None and choice.move is not None and strict_selected is not None:
+            move = choice.move
+            selection = SelectionKind.STRICT_V1
+            audit_selected = strict_selected
+        elif near_selected is not None:
+            move = Move(near_selected.candidate.move_uci, near_selected.candidate.move_san)
+            selection = SelectionKind.NEAR_BRILLIANT
+            audit_selected = near_selected
+        else:
+            move = cast(PlayableEngine, engine).play_move(
                 view.position, strength_by_key(profile.strength_key)
             )
-        )
-        selection = (
-            SelectionKind.STRICT_V1
-            if choice is not None and choice.move is not None
-            else (
+            selection = (
                 SelectionKind.FALLBACK
                 if profile.policy is play_match.MatchPolicy.STRICT_V1
                 else SelectionKind.NORMAL
             )
-        )
         audit = (
-            MatchAudit(selected.decision, selected.best_defense_uci, selected.stability_depth)
-            if selected is not None and choice is not None and choice.move is not None
-            else None
+            None
+            if audit_selected is None
+            else MatchAudit(
+                audit_selected.decision,
+                audit_selected.best_defense_uci,
+                audit_selected.stability_depth,
+            )
         )
         return match_out(
             board, store.save(play_match.record_move(board, state, move, selection, audit))

@@ -8,6 +8,7 @@ from brilliant_chess.application.choose_brilliant_move import (
     StrictSearchBudget,
     choose_brilliant_move,
 )
+from brilliant_chess.domain.gates import GateResult
 from brilliant_chess.domain.models import AnalysisBudget, EngineIdentity, Position
 from brilliant_chess.domain.sacrifice import NO_SACRIFICE
 from brilliant_chess.domain.scoring import BrilliantDecision, ScoreBreakdown
@@ -191,13 +192,53 @@ def test_eligible_audits_break_a_full_tie_by_uci(rules, monkeypatch):
     assert choice.move.uci == "a1a2"
 
 
-def _candidate(move_uci: str) -> Candidate:
+def test_selects_safest_near_brilliant_when_none_is_strictly_eligible(rules, monkeypatch):
+    position = Position.from_fen(POSITION_FEN)
+    unsafe = _non_selectable_audit(
+        _candidate("c1c2", expected_points_loss=0.005),
+        score=95.0,
+        failed_gates=(GateId.SACRIFICE, GateId.SOUNDNESS),
+    )
+    less_compelling = _non_selectable_audit(
+        _candidate("b1b2", expected_points_loss=0.025),
+        score=60.0,
+        failed_gates=(GateId.SACRIFICE,),
+    )
+    closest = _non_selectable_audit(
+        _candidate("a1a2", expected_points_loss=0.020),
+        score=75.0,
+        failed_gates=(GateId.SACRIFICE,),
+    )
+    candidates = (unsafe.candidate, less_compelling.candidate, closest.candidate)
+    analysis = PositionAnalysis(
+        position=position,
+        side_to_move=Color.WHITE,
+        engine=EngineIdentity("test", "1", "0" * 64, None),
+        expected_points_before=0.5,
+        candidates=candidates,
+        warnings=(),
+    )
+    audits = {audit.candidate.move_uci: audit for audit in (unsafe, less_compelling, closest)}
+
+    monkeypatch.setattr(selector, "analyze_position", lambda *_: analysis)
+    monkeypatch.setattr(
+        selector, "_audit_candidate", lambda _context, candidate: audits[candidate.move_uci]
+    )
+
+    choice = choose_brilliant_move(None, None, position, rules, budget())
+
+    assert choice.move is None
+    assert choice.selected is None
+    assert choice.near_selected == closest
+
+
+def _candidate(move_uci: str, *, expected_points_loss: float = 0.01) -> Candidate:
     return Candidate(
         move_uci=move_uci,
         move_san=move_uci,
         rank=1,
         expected_points_after=0.5,
-        expected_points_loss=0.01,
+        expected_points_loss=expected_points_loss,
         centipawns=0,
         mate_in=None,
         depth=20,
@@ -213,6 +254,34 @@ def _selectable_audit(candidate: Candidate) -> CandidateAudit:
         selectable=True,
         score=50.0,
         gates=(),
+        sacrifice=NO_SACRIFICE,
+        breakdown=ScoreBreakdown(10.0, 10.0, 10.0, 10.0, 10.0),
+        rule_set_version="strict_v1",
+    )
+    return CandidateAudit(candidate, decision, best_defense_uci=None, stability_depth=20)
+
+
+def _non_selectable_audit(
+    candidate: Candidate,
+    *,
+    score: float,
+    failed_gates: tuple[GateId, ...],
+) -> CandidateAudit:
+    gates = tuple(
+        GateResult(
+            gate_id=gate_id,
+            status=GateStatus.FAILED if gate_id in failed_gates else GateStatus.PASSED,
+            measured_value=None,
+            threshold=None,
+            explanation="test",
+        )
+        for gate_id in GateId
+    )
+    decision = BrilliantDecision(
+        is_brilliant=False,
+        selectable=False,
+        score=score,
+        gates=gates,
         sacrifice=NO_SACRIFICE,
         breakdown=ScoreBreakdown(10.0, 10.0, 10.0, 10.0, 10.0),
         rule_set_version="strict_v1",

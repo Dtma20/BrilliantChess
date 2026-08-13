@@ -88,8 +88,10 @@ Para cada lado com política \`strict_v1\`, o fluxo será:
 5. cálculo de \`BrilliantDecision\` e \`brilliance_score\`;
 6. escolha da candidata elegível de maior score, com desempate estável por
    menor perda de pontos esperados e UCI;
-7. fallback para a melhor jogada normal do perfil do lado se nenhuma candidata
-   passar todos os portões.
+7. selecao `near_brilliant` para a melhor candidata auditada que continue
+   objetivamente segura, caso nenhuma passe todos os portões;
+8. fallback para a melhor jogada normal do perfil do lado somente se tambem nao
+   existir candidata `near_brilliant` segura.
 
 Evidência ausente torna o portão correspondente \`indeterminate\` e impede a
 elegibilidade. Nenhuma heurística parcial será apresentada como brilhantismo
