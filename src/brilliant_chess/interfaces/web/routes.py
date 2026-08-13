@@ -38,7 +38,7 @@ from brilliant_chess.interfaces.web.engine_pair_session import EnginePairSession
 from brilliant_chess.interfaces.web.engine_session import EngineSession
 from brilliant_chess.interfaces.web.game_store import GameStore
 from brilliant_chess.interfaces.web.match_store import MatchStore
-from brilliant_chess.interfaces.web.pgn import build_pgn
+from brilliant_chess.interfaces.web.pgn import build_match_pgn, build_pgn
 from brilliant_chess.interfaces.web.schemas import (
     AnalysisOut,
     AnalyzeIn,
@@ -170,6 +170,24 @@ def create_match(
 def read_match(match_id: str, board: BoardDep, store: MatchStoreDep) -> MatchOut:
     with translated_errors():
         return match_out(board, store.get(match_id))
+
+
+@router.get("/match/{match_id}/pgn")
+def export_match_pgn(match_id: str, board: BoardDep, store: MatchStoreDep) -> Response:
+    with translated_errors():
+        state = store.get(match_id)
+        initial = board.view(state.initial_fen, ())
+        current = play_match.current_view(board, state)
+        pgn = build_match_pgn(state, initial, current, standard_fen=STARTING_FEN)
+        return Response(
+            content=pgn,
+            media_type="application/x-chess-pgn",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="brilliant-chess-match-{state.match_id}.pgn"'
+                )
+            },
+        )
 
 
 @router.post("/match/{match_id}/step")

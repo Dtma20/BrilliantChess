@@ -173,6 +173,27 @@ def test_capped_match_refuses_one_more_step(client):
     assert client.post(f"/api/match/{match['match_id']}/step").status_code == 400
 
 
+def test_match_pgn_download_returns_attachment(client):
+    match = create_match_with_max_plies(client, max_plies=1)
+
+    client.post(f"/api/match/{match['match_id']}/step")
+    response = client.get(f"/api/match/{match['match_id']}/pgn")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/x-chess-pgn"
+    assert response.headers["content-disposition"] == (
+        f'attachment; filename="brilliant-chess-match-{match["match_id"]}.pgn"'
+    )
+    assert '[Result "1/2-1/2"]' in response.text
+    assert "{result=experimental_move_limit fullmoves=100}" in response.text
+
+
+def test_match_pgn_download_reports_unknown_match(client):
+    response = client.get("/api/match/naoexiste/pgn")
+
+    assert response.status_code == 400
+
+
 def test_match_step_rejects_unknown_or_finished_match(client):
     assert client.post("/api/match/naoexiste/step").status_code == 400
     state = play_match.start_match(
