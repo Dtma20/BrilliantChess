@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from brilliant_chess.application import play_match
 from brilliant_chess.application.analyze_position import Candidate, PositionAnalysis
+from brilliant_chess.domain.gates import GateResult
 from brilliant_chess.domain.values import Color, GameStatus
 from brilliant_chess.ports.board import BoardView
 
@@ -24,6 +26,21 @@ class StrengthOut(_Model):
 class NewGameIn(_Model):
     human_color: Color = Color.WHITE
     strength_key: str = "clube"
+    initial_fen: str | None = None
+
+
+class MatchProfileIn(_Model):
+    strength_key: str = "clube"
+    policy: play_match.MatchPolicy = play_match.MatchPolicy.NORMAL
+
+
+class NewMatchIn(_Model):
+    white: MatchProfileIn = MatchProfileIn(
+        strength_key="maximo", policy=play_match.MatchPolicy.STRICT_V1
+    )
+    black: MatchProfileIn = MatchProfileIn(
+        strength_key="iniciante", policy=play_match.MatchPolicy.NORMAL
+    )
     initial_fen: str | None = None
 
 
@@ -52,6 +69,50 @@ class GameOut(_Model):
     moves_uci: list[str]
     engine_thinking: bool
     result_text: str
+
+
+class MatchProfileOut(_Model):
+    strength: StrengthOut
+    policy: play_match.MatchPolicy
+
+
+class GateOut(_Model):
+    gate_id: str
+    status: str
+    measured: float | int | str | bool | None
+    threshold: float | int | str | bool | None
+    explanation: str
+
+
+class CandidateAuditOut(_Model):
+    selected_uci: str
+    selected_san: str
+    score: float
+    rule_set_version: str
+    gates: list[GateOut]
+    reason_codes: list[str]
+
+
+class MatchMoveOut(_Model):
+    color: Color
+    uci: str
+    san: str
+    selection: play_match.SelectionKind
+    fallback: bool
+    audit: CandidateAuditOut | None
+
+
+class MatchOut(_Model):
+    schema_version: str = API_SCHEMA_VERSION
+    match_id: str
+    white: MatchProfileOut
+    black: MatchProfileOut
+    board: BoardOut
+    moves_uci: list[str]
+    moves_san: list[str]
+    moves: list[MatchMoveOut]
+    result_text: str
+    can_step: bool
 
 
 class BoardIn(_Model):
@@ -140,6 +201,16 @@ def evaluation_text(candidate: Candidate) -> str:
         return "?"
     pawns = candidate.centipawns / 100.0
     return f"{pawns:+.2f}"
+
+
+def gate_out(gate: GateResult) -> GateOut:
+    return GateOut(
+        gate_id=gate.gate_id.value,
+        status=gate.status.value,
+        measured=gate.measured_value,
+        threshold=gate.threshold,
+        explanation=gate.explanation,
+    )
 
 
 def analysis_out(

@@ -9,11 +9,18 @@ import pytest
 from fastapi.testclient import TestClient
 
 from brilliant_chess.adapters.board.service import STARTING_FEN
-from brilliant_chess.application import play_game
+from brilliant_chess.application import play_game, play_match
+from brilliant_chess.application.analyze_position import Candidate
+from brilliant_chess.application.choose_brilliant_move import BrilliantMoveChoice, CandidateAudit
+from brilliant_chess.application.play_match import MatchPolicy, MatchProfile
 from brilliant_chess.bootstrap.container import build_container
+from brilliant_chess.domain.models import Move
+from brilliant_chess.domain.sacrifice import NO_SACRIFICE
+from brilliant_chess.domain.scoring import BrilliantDecision, ScoreBreakdown
 from brilliant_chess.domain.values import Color
+from brilliant_chess.interfaces.web import routes
 from brilliant_chess.interfaces.web.app import create_app
-from tests.fakes.stub_engine import StubSession
+from tests.fakes.stub_engine import StubPairSession, StubSession
 
 MATE_IN_ONE_FEN = "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1"
 
@@ -45,8 +52,150 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
     )
     app = create_app(build_container(config))
     app.state.engine_session = StubSession()
+    app.state.engine_pair_session = StubPairSession()
     with TestClient(app) as test_client:
         yield test_client
+
+
+def create_strict_white_match(client: TestClient) -> dict[str, object]:
+    return client.post(
+        "/api/match",
+        json={
+            "white": {"strength_key": "maximo", "policy": "strict_v1"},
+            "black": {"strength_key": "iniciante", "policy": "normal"},
+        },
+    ).json()
+
+
+def create_match_with_max_plies(client: TestClient, max_plies: int) -> dict[str, object]:
+    board = client.app.state.board
+    store = client.app.state.matches
+    state = play_match.start_match(
+        store.new_id(),
+        STARTING_FEN,
+        MatchProfile("maximo", MatchPolicy.NORMAL),
+        MatchProfile("iniciante", MatchPolicy.NORMAL),
+        max_plies=max_plies,
+    )
+    board.view(state.initial_fen, ())
+    return {"match_id": store.save(state).match_id}
+
+
+def test_create_read_and_step_match(client):
+    created = client.post(
+        "/api/match",
+        json={
+            "white": {"strength_key": "maximo", "policy": "strict_v1"},
+            "black": {"strength_key": "iniciante", "policy": "normal"},
+        },
+    ).json()
+
+    stepped = client.post(f"/api/match/{created['match_id']}/step").json()
+
+    assert len(stepped["moves_uci"]) == 1
+    assert stepped["moves"][0]["color"] == "white"
+    assert client.get(f"/api/match/{created['match_id']}").json()["match_id"] == created["match_id"]
+
+
+def test_match_steps_normal_white_then_black_with_each_profile_strength(client):
+    match = client.post(
+        "/api/match",
+        json={
+            "white": {"strength_key": "maximo", "policy": "normal"},
+            "black": {"strength_key": "iniciante", "policy": "normal"},
+        },
+    ).json()
+
+    client.post(f"/api/match/{match['match_id']}/step")
+    stepped = client.post(f"/api/match/{match['match_id']}/step").json()
+
+    assert [move["color"] for move in stepped["moves"]] == ["white", "black"]
+    assert client.app.state.engine_pair_session.white.calls[0][1] == "maximo"
+    assert client.app.state.engine_pair_session.black.calls[0][1] == "iniciante"
+
+
+def test_strict_side_uses_selected_move_and_compact_match_audit(client, monkeypatch):
+    candidate = Candidate(
+        move_uci="a2a3",
+        move_san="a3",
+        rank=1,
+        expected_points_after=0.5,
+        expected_points_loss=0.0,
+        centipawns=20,
+        mate_in=None,
+        depth=20,
+        nodes=100,
+        pv_uci=("a2a3",),
+        pv_san=("a3",),
+    )
+    decision = BrilliantDecision(
+        is_brilliant=True,
+        selectable=True,
+        score=50.0,
+        gates=(),
+        sacrifice=NO_SACRIFICE,
+        breakdown=ScoreBreakdown(10.0, 10.0, 10.0, 10.0, 10.0),
+        rule_set_version="strict_v1",
+        reasons=("GATE_LEGAL_001",),
+    )
+    selected = CandidateAudit(candidate, decision, best_defense_uci="a7a6", stability_depth=20)
+    monkeypatch.setattr(
+        routes,
+        "choose_brilliant_move",
+        lambda *_: BrilliantMoveChoice(Move("a2a3", "a3"), selected, (selected,)),
+    )
+
+    result = client.post(f"/api/match/{create_strict_white_match(client)['match_id']}/step").json()
+
+    assert result["moves"][0]["selection"] == "strict_v1"
+    assert result["moves"][0]["audit"]["selected_uci"] == "a2a3"
+    assert result["moves"][0]["audit"]["rule_set_version"] == "strict_v1"
+    assert result["moves"][0]["audit"]["reason_codes"] == ["GATE_LEGAL_001"]
+
+
+def test_strict_side_falls_back_to_its_configured_strength(client, monkeypatch):
+    monkeypatch.setattr(
+        routes, "choose_brilliant_move", lambda *_: BrilliantMoveChoice(None, None, ())
+    )
+    match = create_strict_white_match(client)
+
+    result = client.post(f"/api/match/{match['match_id']}/step").json()
+
+    assert result["moves"][0]["selection"] == "fallback"
+    assert client.app.state.engine_pair_session.white.calls[0][1] == "maximo"
+    assert result["moves"][0]["audit"] is None
+
+
+def test_capped_match_refuses_one_more_step(client):
+    match = create_match_with_max_plies(client, max_plies=1)
+
+    assert client.post(f"/api/match/{match['match_id']}/step").status_code == 200
+    assert client.post(f"/api/match/{match['match_id']}/step").status_code == 400
+
+
+def test_match_step_rejects_unknown_or_finished_match(client):
+    assert client.post("/api/match/naoexiste/step").status_code == 400
+    state = play_match.start_match(
+        "mate",
+        STARTING_FEN,
+        MatchProfile("maximo", MatchPolicy.NORMAL),
+        MatchProfile("iniciante", MatchPolicy.NORMAL),
+    )
+    moves = ("e2e4", "e7e5", "f1c4", "b8c6", "d1h5", "g8f6", "h5f7")
+    view = client.app.state.board.view(state.initial_fen, moves)
+    client.app.state.matches.save(
+        play_match.MatchState(
+            match_id=state.match_id,
+            initial_fen=state.initial_fen,
+            current_fen=view.position.fen,
+            white=state.white,
+            black=state.black,
+            moves_uci=moves,
+            moves_san=view.moves_san,
+        )
+    )
+
+    assert client.post("/api/match/mate/step").status_code == 400
 
 
 def test_health_reports_the_rule_set(client):
@@ -194,10 +343,15 @@ def test_engine_is_closed_on_shutdown(tmp_path):
     )
     app = create_app(build_container(config))
     session = StubSession()
+    pair = StubPairSession()
     app.state.engine_session = session
+    app.state.engine_pair_session = pair
     with TestClient(app):
         pass
     assert session.closed is True
+    assert pair.closed is True
+    assert pair.white.closed is True
+    assert pair.black.closed is True
 
 
 def test_all_engine_sessions_are_closed_on_shutdown_even_if_one_raises(tmp_path):

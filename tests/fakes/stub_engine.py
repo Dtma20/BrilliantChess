@@ -7,6 +7,7 @@ exercitar ranking, setas e serializacao sem depender do Stockfish.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import chess
@@ -26,11 +27,18 @@ _TOP_CENTIPAWNS = 100
 _CENTIPAWN_STEP = 10
 
 
+@dataclass
 class StubEngine(FixedEngine):
     """Junta analisar e jogar no mesmo objeto, como faz o motor real."""
 
+    closed: bool = False
+
     def identity(self) -> EngineIdentity:
         return DEFAULT_IDENTITY
+
+    def close(self) -> None:
+        """Espelha o ciclo de vida do motor real sem recurso externo."""
+        self.closed = True
 
     def analyze(
         self,
@@ -73,4 +81,24 @@ class StubSession:
         return self.stub
 
     def close(self) -> None:
+        self.closed = True
+
+
+class StubPairSession:
+    """Par de motores deterministas para exercitar partidas do laboratorio."""
+
+    def __init__(self) -> None:
+        self.white = StubEngine()
+        self.black = StubEngine()
+        self.closed = False
+
+    def white_engine(self) -> StubEngine:
+        return self.white
+
+    def black_engine(self) -> StubEngine:
+        return self.black
+
+    def close(self) -> None:
+        self.white.close()
+        self.black.close()
         self.closed = True
