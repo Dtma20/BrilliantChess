@@ -94,6 +94,22 @@ def test_best_defense_search_accepts_small_cross_search_ep_improvement(rules):
     assert soundness.measured_value == 0.0
 
 
+def test_best_defense_search_rejects_large_cross_search_disagreement(rules):
+    choice = choose_brilliant_move(
+        engine_for(best_defense_centipawns=-80),
+        PythonChessBoardService(),
+        Position.from_fen(POSITION_FEN),
+        rules,
+        budget(),
+    )
+
+    assert choice.move is None
+    soundness = next(
+        gate for gate in choice.candidates[0].decision.gates if gate.gate_id is GateId.SOUNDNESS
+    )
+    assert soundness.status is GateStatus.INDETERMINATE
+
+
 def test_missing_best_defense_keeps_candidate_but_rejects_it(rules):
     choice = choose_brilliant_move(
         engine_for(best_defense=False),

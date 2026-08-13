@@ -105,6 +105,9 @@ independentes, com raizes diferentes. Ao calcular a perda apos a melhor defesa,
 `robustness.max_ep_drift_on_deeper_search` e a normaliza para zero. A margem
 nao vale para o ranking dentro da mesma confirmacao, que continua usando a
 tolerancia numerica global de `1e-6` e acusa inversoes reais de ordem.
+Se a divergencia exceder essa margem, a candidata fica `indeterminate` em
+`GATE_SOUNDNESS_001` e nao e selecionada; o laboratorio usa o fallback normal
+em vez de interromper a partida.
 
 ## Deteccao de sacrificio
 

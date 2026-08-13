@@ -10,7 +10,7 @@ from brilliant_chess.application.analyze_position import (
     analyze_position,
 )
 from brilliant_chess.application.sacrifice_detector import detect_destination_offer
-from brilliant_chess.domain.errors import EngineError
+from brilliant_chess.domain.errors import EngineError, InvalidEvaluationError
 from brilliant_chess.domain.expected_points import expected_points_loss
 from brilliant_chess.domain.gates import GateInputs, GateResult, evaluate_gates
 from brilliant_chess.domain.material import material_delta
@@ -132,15 +132,19 @@ def _audit_candidate(context: _AuditContext, candidate: Candidate) -> CandidateA
     defense = _first(engine, after.position, budget.best_defense)
     best_defense_uci = None if defense is None else defense.move_uci
     defense_loss = None
+    best_defense_disagrees = False
     depends_on_opponent_error = False
     material_conceded = 0.0
     if defense is not None:
         defender_points_from_mover_pov = defense.evaluation.flipped().expected_points
-        defense_loss = expected_points_loss(
-            candidate.expected_points_after,
-            defender_points_from_mover_pov,
-            tolerance=rules.robustness.max_ep_drift_on_deeper_search,
-        ).value
+        try:
+            defense_loss = expected_points_loss(
+                candidate.expected_points_after,
+                defender_points_from_mover_pov,
+                tolerance=rules.robustness.max_ep_drift_on_deeper_search,
+            ).value
+        except InvalidEvaluationError:
+            best_defense_disagrees = True
         depends_on_opponent_error = (
             len(candidate.pv_uci) < _PV_WITH_REPLY_LENGTH
             or defense.move_uci != candidate.pv_uci[_OPPONENT_REPLY_INDEX]
@@ -204,7 +208,12 @@ def _audit_candidate(context: _AuditContext, candidate: Candidate) -> CandidateA
         pv_overlap_plies=overlap,
         sacrifice_persisted=sacrifice.signals.persists_under_deeper_search,
     )
-    gates = _strict_gates(inputs, rules, has_stability_evidence=stable is not None)
+    gates = _strict_gates(
+        inputs,
+        rules,
+        has_stability_evidence=stable is not None,
+        best_defense_disagrees=best_defense_disagrees,
+    )
     return CandidateAudit(
         candidate=candidate,
         decision=decide(gates, scoring, rules),
@@ -218,18 +227,40 @@ def _strict_gates(
     rules: RuleSet,
     *,
     has_stability_evidence: bool,
+    best_defense_disagrees: bool,
 ) -> tuple[GateResult, ...]:
     gates = evaluate_gates(inputs, rules)
-    if has_stability_evidence:
-        return gates
+    if not has_stability_evidence:
+        gates = _mark_gate_indeterminate(
+            gates,
+            GateId.STABILITY,
+            "Evidencia de estabilidade obrigatoria ausente",
+        )
+    if best_defense_disagrees:
+        gates = _mark_gate_indeterminate(
+            gates,
+            GateId.SOUNDNESS,
+            (
+                "Discordancia entre confirmacao e melhor defesa excede "
+                f"{rules.robustness.max_ep_drift_on_deeper_search:.4f} EP"
+            ),
+        )
+    return gates
+
+
+def _mark_gate_indeterminate(
+    gates: tuple[GateResult, ...],
+    gate_id: GateId,
+    explanation: str,
+) -> tuple[GateResult, ...]:
     return tuple(
         replace(
             gate,
             status=GateStatus.INDETERMINATE,
             measured_value=None,
-            explanation="Evidencia de estabilidade obrigatoria ausente",
+            explanation=explanation,
         )
-        if gate.gate_id is GateId.STABILITY
+        if gate.gate_id is gate_id
         else gate
         for gate in gates
     )
