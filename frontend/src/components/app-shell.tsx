@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { NavLink, Outlet } from "react-router-dom"
 
 import { Button } from "@/components/ui/button"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { api, type Health } from "@/lib/api"
@@ -72,7 +73,7 @@ export function AppShell() {
 
       <FairPlayBanner />
 
-      <main className="mx-auto w-full max-w-[1180px] px-4 py-6 sm:px-6">
+      <main className="mx-auto w-full max-w-[1180px] px-4 py-4 sm:px-6 sm:py-5">
         <Outlet />
       </main>
     </div>
@@ -99,21 +100,34 @@ function NavItem({ to, label, end }: { to: string; label: string; end: boolean }
 }
 
 /**
- * Aviso permanente de fair play. Não é decorativo e não pode ser dispensado:
- * o projeto proíbe qualquer ponte com partidas ao vivo de terceiros.
+ * Aviso permanente de fair play. Não é decorativo e não pode ser dispensado.
+ * O carimbo e a frase curta estão sempre na tela; o texto longo fica atrás de
+ * uma revelação para não empurrar o tabuleiro para baixo da dobra.
  */
 export function FairPlayBanner() {
   return (
-    <div className="flex items-baseline gap-3 border-b border-border bg-destructive-wash px-4 py-2 text-ink-2 sm:px-6">
-      <span className="shrink-0 text-[0.66rem] font-bold tracking-[0.1em] text-destructive uppercase">
-        Fair play
-      </span>
-      <p className="m-0 text-[0.8rem]">
-        Ferramenta local de estudo. Não use durante partidas ao vivo em nenhuma plataforma: isso é
-        trapaça. O app desenha o próprio tabuleiro, não lê tela, não controla o mouse e não se
-        conecta a partida alguma.
-      </p>
-    </div>
+    <Collapsible className="border-b border-border bg-destructive-wash px-4 text-ink-2 sm:px-6">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-1.5">
+        <span className="shrink-0 text-[0.64rem] font-bold tracking-[0.1em] text-destructive uppercase">
+          Fair play
+        </span>
+        <p className="m-0 text-[0.78rem]">
+          Ferramenta local de estudo. Usar durante partida ao vivo é trapaça.
+        </p>
+        <CollapsibleTrigger className="group ml-auto shrink-0 rounded-sm text-[0.72rem] text-ink-3 underline decoration-destructive/40 underline-offset-2 hover:text-foreground">
+          <span className="group-data-[state=open]:hidden">o que o app não faz</span>
+          <span className="hidden group-data-[state=open]:inline">recolher</span>
+        </CollapsibleTrigger>
+      </div>
+      <CollapsibleContent className="data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down overflow-hidden">
+        <p className="mt-0 mb-2 max-w-[80ch] text-[0.78rem] text-ink-3">
+          O app desenha o próprio tabuleiro. Não lê a tela, não captura tabuleiro de outro
+          programa, não controla o mouse, não desenha overlay e não se conecta a partida alguma em
+          plataforma nenhuma. A partida em tempo real permitida é a que acontece aqui, contra o
+          próprio motor.
+        </p>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 

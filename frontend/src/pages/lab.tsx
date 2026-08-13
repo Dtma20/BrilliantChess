@@ -1,11 +1,28 @@
+/**
+ * Bancada de duelo entre motores.
+ *
+ * A página é uma mesa de análise, não um painel: o tabuleiro é o objeto
+ * principal e tem tamanho garantido acima da dobra; o estado da partida fica
+ * colado nele, como um relógio ao lado do tabuleiro; configuração, comandos,
+ * súmula e auditoria vivem num trilho único à direita.
+ *
+ * O autoplay vive só nesta página. Não existe laço de partida no servidor:
+ * sair daqui ou fechar a aba encerra o duelo.
+ */
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import { Chessboard } from "@/components/chessboard"
-import { AuditDetail, SelectionLegend, SelectionMark } from "@/components/lab-parts"
-import { PageHeader } from "@/components/page-header"
+import {
+  AuditDetail,
+  SelectionLegend,
+  SelectionMark,
+  SideBadge,
+  SideName,
+  Drawer,
+} from "@/components/lab-parts"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import { Card } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Select,
@@ -16,6 +33,7 @@ import {
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
+  API_SCHEMA_VERSION,
   STARTING_FEN,
   api,
   downloadPgn,
@@ -23,18 +41,22 @@ import {
   type Color,
   type LabSettings,
   type Match,
+  type MatchMove,
   type MatchPolicy,
   type MatchProfileInput,
-  type SelectionKind,
   type Strength,
 } from "@/lib/api"
 import { SIDE_NAMES, kingSquare } from "@/lib/chess"
-import { SELECTION_META, plieLabel } from "@/lib/lab"
+import { plieLabel, selectionCounts, selectionMeta } from "@/lib/lab"
 import { cn } from "@/lib/utils"
 
-type DeckState = "idle" | "thinking" | "paused" | "review" | "done" | "capped" | "error"
+type DeskState = "idle" | "thinking" | "paused" | "review" | "done" | "capped" | "error"
 
-const SELECTION_ORDER: SelectionKind[] = ["strict_v1", "near_brilliant", "fallback", "normal"]
+interface SumulaRow {
+  number: number
+  white?: { index: number; move: MatchMove }
+  black?: { index: number; move: MatchMove }
+}
 
 export function LabPage() {
   const [settings, setSettings] = useState<LabSettings | null>(null)
@@ -60,8 +82,10 @@ export function LabPage() {
   const delayRef = useRef(250)
   const timerRef = useRef<number | null>(null)
   const stepRef = useRef<() => Promise<void>>(async () => {})
+  const toggleRef = useRef<() => Promise<void>>(async () => {})
+  const stepOnceRef = useRef<() => Promise<void>>(async () => {})
   const positions = useRef(new Map<number, BoardView>())
-  const ribbonRef = useRef<HTMLOListElement>(null)
+  const sumulaRef = useRef<HTMLTableSectionElement>(null)
 
   matchRef.current = match
   runningRef.current = running
@@ -84,8 +108,6 @@ export function LabPage() {
     timerRef.current = null
   }, [])
 
-  /* O autoplay vive só nesta página: sair dela ou fechar a aba encerra o duelo.
-     Não existe laço de partida no servidor. */
   useEffect(() => stop, [stop])
   useEffect(() => {
     window.addEventListener("pagehide", stop)
@@ -148,8 +170,9 @@ export function LabPage() {
   }, [black, white])
 
   const plies = match?.moves.length ?? 0
-  const finished = Boolean(match) && !match!.can_step
-  const capped = finished && plies >= (settings?.max_plies ?? 200)
+  const finished = match !== null && !match.can_step
+  const maxPlies = settings?.max_plies ?? 200
+  const capped = finished && plies >= maxPlies
   const reviewing = selected !== null && selected < plies - 1
   const viewedPly = selected ?? plies - 1
 
@@ -178,15 +201,16 @@ export function LabPage() {
 
   const selectPly = useCallback(
     (index: number) => {
-      if (!matchRef.current || index < 0 || index >= (matchRef.current.moves.length ?? 0)) return
-      if (index < matchRef.current.moves.length - 1) stop()
-      setSelected(index === matchRef.current.moves.length - 1 ? null : index)
+      const current = matchRef.current
+      if (!current || index < 0 || index >= current.moves.length) return
+      if (index < current.moves.length - 1) stop()
+      setSelected(index === current.moves.length - 1 ? null : index)
     },
     [stop],
   )
 
-  async function toggle() {
-    if (running) {
+  const toggle = useCallback(async () => {
+    if (runningRef.current) {
       stop()
       return
     }
@@ -196,14 +220,17 @@ export function LabPage() {
     setRunning(true)
     runningRef.current = true
     void step()
-  }
+  }, [ensureMatch, step, stop])
 
-  async function stepOnce() {
+  const stepOnce = useCallback(async () => {
     stop()
     if (!(await ensureMatch())) return
     setSelected(null)
     await step()
-  }
+  }, [ensureMatch, step, stop])
+
+  toggleRef.current = toggle
+  stepOnceRef.current = stepOnce
 
   function reset() {
     stop()
@@ -222,62 +249,72 @@ export function LabPage() {
       if (["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(tag)) return
       if (event.code === "Space") {
         event.preventDefault()
-        void toggle()
+        void toggleRef.current()
       } else if (event.key.toLowerCase() === "n") {
         event.preventDefault()
-        void stepOnce()
+        void stepOnceRef.current()
       }
     }
     document.addEventListener("keydown", onKeyDown)
     return () => document.removeEventListener("keydown", onKeyDown)
-  })
+  }, [])
 
-  const deck = useMemo((): { state: DeckState; text: string } => {
-    if (!match) return { state: "idle", text: "Pronto para iniciar." }
+  const desk = useMemo((): { state: DeskState; text: string } => {
+    if (error && !match) return { state: "error", text: "Servidor local não respondeu." }
+    if (!match) return { state: "idle", text: "Mesa pronta. Falta iniciar." }
     if (capped) return { state: "capped", text: match.result_text }
     if (finished) return { state: "done", text: match.result_text }
-    if (busy) return { state: "thinking", text: `${SIDE_NAMES[match.board.side_to_move]} analisando…` }
+    if (busy) return { state: "thinking", text: `${SIDE_NAMES[match.board.side_to_move]} analisando` }
     if (reviewing && selected !== null) {
-      return { state: "review", text: `Revisão do meio-lance ${selected + 1} de ${plies}.` }
+      return { state: "review", text: `Revisando o meio-lance ${selected + 1} de ${plies}` }
     }
     if (error) return { state: "error", text: "Duelo interrompido." }
-    if (running) return { state: "thinking", text: "Duelo em andamento." }
+    if (running) return { state: "thinking", text: "Duelo em andamento" }
     if (plies === 0) return { state: "paused", text: "Perfis prontos. Falta iniciar." }
-    return { state: "paused", text: `Em pausa após ${plieLabel(plies)}.` }
+    return { state: "paused", text: `Em pausa após ${plieLabel(plies)}` }
   }, [busy, capped, error, finished, match, plies, reviewing, running, selected])
 
   const boardView = reviewing ? reviewView : match?.board
-  const maxPlies = settings?.max_plies ?? 200
   const cadence = Math.min(1, plies / maxPlies)
   const move = match?.moves[viewedPly]
+  const unknownSchema = match !== null && match.schema_version !== API_SCHEMA_VERSION
+
+  const sumula = useMemo((): SumulaRow[] => {
+    const moves = match?.moves ?? []
+    const rows: SumulaRow[] = []
+    for (let index = 0; index < moves.length; index += 2) {
+      rows.push({
+        number: index / 2 + 1,
+        white: { index, move: moves[index] },
+        black: moves[index + 1] ? { index: index + 1, move: moves[index + 1] } : undefined,
+      })
+    }
+    return rows
+  }, [match])
 
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
-      <section className="grid gap-3.5 lg:sticky lg:top-6 lg:mx-auto lg:w-full lg:max-w-[min(100%,calc(100vh-19rem))]">
-        <PageHeader
-          title="Laboratório de duelo"
-          lede={
-            <>
-              Dois processos do mesmo Stockfish, um contra o outro.{" "}
-              <code className="text-ink-2">normal</code> joga a melhor jogada do perfil;{" "}
-              <code className="text-brass">strict_v1</code> só aceita uma candidata que passe pelos
-              sete portões.
-            </>
-          }
-        />
+    <div className="grid gap-4 lg:mx-auto lg:w-fit lg:grid-cols-[auto_minmax(320px,392px)] lg:items-start lg:gap-5">
+      {/* A altura do tabuleiro é orçada: sobra exatamente o necessário para a
+          barra de estado acima e o placar abaixo caberem na primeira tela de um
+          notebook comum. */}
+      <section className="grid gap-1.5 lg:w-[clamp(320px,calc(100svh-16rem),620px)]">
+        <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h1 className="m-0 text-[1.05rem] leading-none font-medium">Laboratório de duelo</h1>
+          <p className="m-0 text-[0.8rem] text-ink-3">Dois Stockfish, um contra o outro.</p>
+        </header>
 
-        <Card className="gap-2.5 px-4 py-3.5">
+        <div className="grid gap-1.5">
           <div className="flex items-center gap-2.5">
-            <StateMark state={deck.state} />
+            <StateMark state={desk.state} />
             <span role="status" aria-live="polite" className="text-[0.95rem] font-medium">
-              {deck.text}
+              {desk.text}
             </span>
-            <span className="ml-auto shrink-0 numeric text-[0.78rem] text-ink-3">
-              {plies}/{maxPlies} meios-lances
+            <span className="ml-auto shrink-0 numeric text-[0.75rem] text-ink-4">
+              {plies}/{maxPlies}
             </span>
           </div>
           <div
-            className="relative h-[3px] overflow-hidden rounded-full bg-elevated"
+            className="relative h-[2px] overflow-hidden rounded-full bg-elevated"
             role="img"
             aria-label={
               plies === 0
@@ -293,7 +330,7 @@ export function LabPage() {
               style={{ width: `${cadence * 100}%` }}
             />
           </div>
-        </Card>
+        </div>
 
         <Chessboard
           fen={boardView?.fen ?? STARTING_FEN}
@@ -303,43 +340,52 @@ export function LabPage() {
           }
           label="Tabuleiro do duelo, somente leitura"
         />
+
+        <ClockPlate match={match} busy={busy} move={move} ply={viewedPly} />
       </section>
 
-      <aside className="grid gap-4">
-        <Card className="gap-3 p-5">
-          <h2 className="m-0 label-micro">Perfis</h2>
-          <div className="grid gap-2">
-            <SideRow
+      <aside className="grid content-start overflow-hidden rounded-lg border border-border bg-card lg:sticky lg:top-4">
+        {unknownSchema && (
+          <p className="m-0 border-b border-border bg-destructive-wash px-4 py-2 text-[0.76rem] text-ink-2">
+            O servidor respondeu com o contrato <b className="font-mono">{match.schema_version}</b>{" "}
+            e esta interface conhece o <b className="font-mono">{API_SCHEMA_VERSION}</b>. Alguns
+            detalhes podem aparecer como não reconhecidos.
+          </p>
+        )}
+
+        <Register title="Mesa">
+          <div className="grid gap-1.5">
+            <SideSetup
               color="white"
               profile={white}
               onChange={setWhite}
               strengths={strengths}
-              locked={Boolean(match)}
-              thinking={busy && match?.board.side_to_move === "white"}
-              moves={match?.moves ?? []}
+              locked={match !== null}
             />
-            <SideRow
+            <SideSetup
               color="black"
               profile={black}
               onChange={setBlack}
               strengths={strengths}
-              locked={Boolean(match)}
-              thinking={busy && match?.board.side_to_move === "black"}
-              moves={match?.moves ?? []}
+              locked={match !== null}
             />
           </div>
-          <p className="m-0 max-w-[46ch] text-[0.82rem] text-ink-3">
-            A política estrita é mais lenta: cada lance passa por descoberta, confirmação, melhor
-            defesa e estabilidade antes de decidir.
-          </p>
-        </Card>
+          <Drawer title="Como a política estrita decide">
+            <p className="m-0 text-[0.78rem] leading-snug text-ink-3">
+              <code className="text-ink-2">normal</code> joga a melhor jogada do perfil.{" "}
+              <code className="text-brass">strict_v1</code> passa cada candidata por descoberta,
+              confirmação, melhor defesa e estabilidade, e só chama de brilhante o que aprova nos
+              sete portões. Por isso é mais lenta.
+            </p>
+          </Drawer>
+        </Register>
 
-        <Card className="gap-3 p-5">
-          <h2 className="m-0 label-micro">Controles</h2>
-          <div className="flex flex-wrap gap-2">
+        <Register title="Comandos">
+          <div className="flex flex-wrap gap-1.5">
             {/* Pausar precisa funcionar justamente enquanto o motor pensa, então
                 este botão não é desabilitado por `busy`. */}
             <Button
+              size="sm"
               onClick={() => void toggle()}
               disabled={finished || (busy && !match)}
               className="flex-1"
@@ -347,16 +393,18 @@ export function LabPage() {
               {running ? "Pausar" : match && plies > 0 ? "Continuar" : "Iniciar duelo"}
             </Button>
             <Button
+              size="sm"
               variant="outline"
               onClick={() => void stepOnce()}
               disabled={busy || running || finished}
             >
               Um lance
             </Button>
-            <Button variant="outline" onClick={reset} disabled={busy || !match}>
+            <Button size="sm" variant="outline" onClick={reset} disabled={busy || !match}>
               Reiniciar
             </Button>
             <Button
+              size="sm"
               variant="outline"
               onClick={() =>
                 match &&
@@ -375,75 +423,85 @@ export function LabPage() {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-          <p className="m-0 text-[0.72rem] text-ink-4">
+          <p className="m-0 text-[0.7rem] text-ink-4">
             <Kbd>Espaço</Kbd> inicia ou pausa · <Kbd>N</Kbd> avança um lance · <Kbd>↑</Kbd>{" "}
-            <Kbd>↓</Kbd> percorrem a lista de lances
+            <Kbd>↓</Kbd> percorrem a súmula
           </p>
-        </Card>
+        </Register>
 
-        <Card className="gap-3 p-5">
-          <h2 className="m-0 label-micro">Lances</h2>
-          <SelectionLegend />
+        <Register title="Auditoria">
+          {!move ? (
+            <p className="m-0 max-w-[44ch] text-[0.82rem] text-ink-4">
+              A auditoria aparece a partir do primeiro lance e explica por que aquela jogada foi
+              escolhida.
+            </p>
+          ) : (
+            <div className="grid gap-2.5">
+              <Verdict match={match} move={move} />
+              {move.audit ? (
+                <AuditDetail audit={move.audit} />
+              ) : (
+                <p className="m-0 text-[0.8rem] text-ink-4">
+                  Sem auditoria: este lado joga sob a política <code>normal</code>.
+                </p>
+              )}
+            </div>
+          )}
+        </Register>
+
+        <Register title="Súmula">
           {plies === 0 ? (
-            <p className="m-0 max-w-[44ch] text-[0.84rem] text-ink-4">
-              Nenhum lance ainda. Ajuste os perfis e inicie o duelo.
+            <p className="m-0 max-w-[44ch] text-[0.82rem] text-ink-4">
+              Nenhum lance ainda. Ajuste a mesa e inicie o duelo.
             </p>
           ) : (
             <>
-              <ScrollArea className="h-72">
-                <ol
-                  ref={ribbonRef}
-                  aria-label="Lances da partida"
-                  className="m-0 grid list-none grid-cols-[2.2rem_1fr_1fr] gap-x-1 gap-y-0.5 p-0"
-                  onKeyDown={(event) => {
-                    const deltas: Record<string, number> = {
-                      ArrowUp: -2,
-                      ArrowDown: 2,
-                      ArrowLeft: -1,
-                      ArrowRight: 1,
-                    }
-                    let next = viewedPly
-                    if (event.key === "Home") next = 0
-                    else if (event.key === "End") next = plies - 1
-                    else if (event.key in deltas) next = viewedPly + deltas[event.key]
-                    else return
-                    event.preventDefault()
-                    next = Math.max(0, Math.min(plies - 1, next))
-                    selectPly(next)
-                    window.requestAnimationFrame(() =>
-                      ribbonRef.current
-                        ?.querySelector<HTMLButtonElement>(`[data-ply="${next}"]`)
-                        ?.focus(),
-                    )
-                  }}
-                >
-                  {Array.from({ length: Math.ceil(plies / 2) }, (_, row) => (
-                    <li key={row} className="contents">
-                      <span className="self-center pr-0.5 text-right numeric text-[0.74rem] text-ink-4">
-                        {row + 1}.
-                      </span>
-                      <PlyButton
-                        index={row * 2}
-                        move={match!.moves[row * 2]}
-                        current={viewedPly}
-                        onSelect={selectPly}
-                      />
-                      {match!.moves[row * 2 + 1] ? (
-                        <PlyButton
-                          index={row * 2 + 1}
-                          move={match!.moves[row * 2 + 1]}
-                          current={viewedPly}
-                          onSelect={selectPly}
-                        />
-                      ) : (
-                        <span />
-                      )}
-                    </li>
-                  ))}
-                </ol>
+              <ScrollArea className="h-[13.5rem] rounded-sm border border-border-soft bg-inset">
+                <table className="w-full border-collapse text-left">
+                  <caption className="sr-only">
+                    Lances da partida, com a marca de escolha de cada meio-lance
+                  </caption>
+                  <tbody
+                    ref={sumulaRef}
+                    onKeyDown={(event) => {
+                      const deltas: Record<string, number> = {
+                        ArrowUp: -2,
+                        ArrowDown: 2,
+                        ArrowLeft: -1,
+                        ArrowRight: 1,
+                      }
+                      let next = viewedPly
+                      if (event.key === "Home") next = 0
+                      else if (event.key === "End") next = plies - 1
+                      else if (event.key in deltas) next = viewedPly + deltas[event.key]
+                      else return
+                      event.preventDefault()
+                      next = Math.max(0, Math.min(plies - 1, next))
+                      selectPly(next)
+                      window.requestAnimationFrame(() =>
+                        sumulaRef.current
+                          ?.querySelector<HTMLButtonElement>(`[data-ply="${next}"]`)
+                          ?.focus(),
+                      )
+                    }}
+                  >
+                    {sumula.map((row) => (
+                      <tr key={row.number} className="border-b border-border-soft last:border-b-0">
+                        <th
+                          scope="row"
+                          className="w-8 py-px pr-1 pl-1.5 text-right align-middle numeric text-[0.72rem] font-normal text-ink-4"
+                        >
+                          {row.number}
+                        </th>
+                        <PlyCell entry={row.white} current={viewedPly} onSelect={selectPly} />
+                        <PlyCell entry={row.black} current={viewedPly} onSelect={selectPly} />
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </ScrollArea>
               {reviewing && (
-                <p className="m-0 text-[0.8rem] text-ink-3">
+                <p className="m-0 text-[0.78rem] text-ink-3">
                   Autoplay pausado para revisão.{" "}
                   <button
                     type="button"
@@ -454,196 +512,285 @@ export function LabPage() {
                   </button>
                 </p>
               )}
+              <Drawer title="Marcas de escolha">
+                <SelectionLegend />
+              </Drawer>
             </>
           )}
-        </Card>
-
-        <Card className="gap-2 p-5">
-          <h2 className="m-0 label-micro">Auditoria</h2>
-          {!match ? (
-            <p className="m-0 max-w-[44ch] text-[0.84rem] text-ink-4">
-              Inicie o duelo para ver como cada lance foi escolhido.
-            </p>
-          ) : !move ? (
-            <p className="m-0 max-w-[44ch] text-[0.84rem] text-ink-4">
-              Ainda não há lances. A auditoria aparece a partir do primeiro.
-            </p>
-          ) : (
-            <>
-              <Verdict match={match} index={viewedPly} />
-              {move.audit && <AuditDetail audit={move.audit} />}
-            </>
-          )}
-        </Card>
+        </Register>
       </aside>
     </div>
   )
 }
 
-function Verdict({ match, index }: { match: Match; index: number }) {
-  const move = match.moves[index]
-  const profile = move.color === "white" ? match.white : match.black
-  const label = profile.strength.label
-
-  if (move.selection === "strict_v1") {
-    return (
-      <p className="m-0 mb-2 text-[0.88rem] text-ink-2">
-        <strong className="font-semibold text-foreground">{move.san}</strong> passou pelos sete
-        portões obrigatórios e foi a candidata elegível de maior pontuação.
-      </p>
-    )
-  }
-  if (move.selection === "near_brilliant") {
-    return (
-      <p className="m-0 mb-2 text-[0.88rem] text-ink-2">
-        <strong className="font-semibold text-foreground">{move.san}</strong> foi a candidata
-        auditada mais próxima de brilhante: segura, mas sem aprovação nos sete portões.
-      </p>
-    )
-  }
-  if (move.selection === "fallback") {
-    return (
-      <p className="m-0 mb-2 text-[0.88rem] text-ink-2">
-        Nenhuma candidata passou pelos sete portões nesta posição. {SIDE_NAMES[move.color]} jogaram{" "}
-        <strong className="font-semibold text-foreground">{move.san}</strong>, a melhor jogada do
-        perfil {label}.
-      </p>
-    )
-  }
+/** Registro do trilho: um cabeçalho de instrumento e um corpo, sem cartões. */
+function Register({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <p className="m-0 mb-2 text-[0.88rem] text-ink-2">
-      <strong className="font-semibold text-foreground">{move.san}</strong> veio do Stockfish no
-      perfil {label}. A política normal não aplica nenhum critério de brilhantismo.
-    </p>
+    <section className="grid gap-2 border-b border-border-soft px-4 py-3 last:border-b-0">
+      <h2 className="m-0 label-micro">{title}</h2>
+      {children}
+    </section>
   )
 }
 
-function PlyButton({
-  index,
+/**
+ * Placar sob o tabuleiro: os dois lados de frente um para o outro, o lado a
+ * jogar aceso e o lance em foco com sua marca. É o relógio da mesa.
+ */
+function ClockPlate({
+  match,
+  busy,
   move,
+  ply,
+}: {
+  match: Match | null
+  busy: boolean
+  move: MatchMove | undefined
+  ply: number
+}) {
+  const active = match?.can_step ? match.board.side_to_move : null
+  return (
+    <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-1.5 rounded-md border border-border-soft bg-secondary px-2.5 py-1.5">
+      <SidePlate color="white" match={match} active={active === "white"} busy={busy} />
+      <div className="flex flex-col items-center justify-center gap-1 px-1">
+        {move ? (
+          <>
+            <span className="flex items-baseline gap-1.5">
+              <b className="numeric text-[0.9rem] font-semibold">{move.san}</b>
+              <SelectionMark kind={move.selection} className="text-[0.78rem]" />
+            </span>
+            <span className="numeric text-[0.66rem] text-ink-4">
+              meio-lance {ply + 1} · {selectionMeta(move.selection).label}
+            </span>
+          </>
+        ) : (
+          <span className="text-[0.72rem] text-ink-4">sem lances</span>
+        )}
+      </div>
+      <SidePlate color="black" match={match} active={active === "black"} busy={busy} align="end" />
+    </div>
+  )
+}
+
+function SidePlate({
+  color,
+  match,
+  active,
+  busy,
+  align = "start",
+}: {
+  color: Color
+  match: Match | null
+  active: boolean
+  busy: boolean
+  align?: "start" | "end"
+}) {
+  const profile = match ? (color === "white" ? match.white : match.black) : null
+  const counts = selectionCounts((match?.moves ?? []).filter((item) => item.color === color))
+  const played = counts.reduce((sum, item) => sum + item.total, 0)
+  return (
+    <div
+      className={cn(
+        "grid content-center gap-0.5 rounded-sm px-1.5 py-1",
+        align === "end" ? "justify-items-end text-right" : "justify-items-start",
+        active && "bg-brass-wash shadow-[inset_0_0_0_1px_var(--brass-wash)]",
+      )}
+    >
+      <span className="flex items-center gap-1.5">
+        {align === "end" && active && <Thinking busy={busy} />}
+        <SideBadge color={color} />
+        <SideName color={color} />
+        {align === "start" && active && <Thinking busy={busy} />}
+      </span>
+      {/* Perfil e talhos na mesma linha: o placar tem sempre duas alturas, então
+          o tabuleiro nunca é empurrado quando a contagem começa. */}
+      <span
+        className={cn(
+          "flex items-baseline gap-x-2 gap-y-0.5 numeric text-[0.68rem] text-ink-4",
+          align === "end" ? "flex-row-reverse flex-wrap-reverse" : "flex-wrap",
+        )}
+      >
+        <span>
+          {profile ? `${profile.strength.label.split(" (")[0]} · ${profile.policy}` : "não iniciado"}
+        </span>
+        {played > 0 &&
+          counts
+            .filter((item) => item.total > 0)
+            .map((item) => (
+              <span
+                key={String(item.kind)}
+                className="flex items-baseline gap-1 text-ink-3"
+                title={`${item.total} × ${selectionMeta(item.kind).label}`}
+              >
+                <SelectionMark kind={item.kind} className="text-[0.7rem]" />
+                {item.total}
+              </span>
+            ))}
+      </span>
+    </div>
+  )
+}
+
+function Thinking({ busy }: { busy: boolean }) {
+  return (
+    <span
+      className={cn(
+        "label-micro text-[0.6rem] text-brass",
+        busy ? "animate-breathe" : "opacity-70",
+      )}
+    >
+      {busy ? "analisa" : "a jogar"}
+    </span>
+  )
+}
+
+function Verdict({ match, move }: { match: Match; move: MatchMove }) {
+  const profile = move.color === "white" ? match.white : match.black
+  const label = profile.strength.label.split(" (")[0]
+  const meta = selectionMeta(move.selection)
+  const san = <strong className="font-semibold text-foreground">{move.san}</strong>
+
+  const sentence = () => {
+    switch (move.selection) {
+      case "strict_v1":
+        return <>{san} passou pelos sete portões e teve a maior pontuação entre as elegíveis.</>
+      case "near_brilliant":
+        return (
+          <>
+            {san} é segura e auditada, mas não recebe o selo de brilhante: reprovou em pelo menos um
+            portão de classificação.
+          </>
+        )
+      case "fallback":
+        return (
+          <>
+            Nenhuma candidata sobreviveu à auditoria aqui. {SIDE_NAMES[move.color]} jogaram {san}, a
+            melhor jogada do perfil {label}.
+          </>
+        )
+      case "normal":
+        return (
+          <>
+            {san} veio do Stockfish no perfil {label}. A política <code>normal</code> não aplica
+            critério de brilhantismo.
+          </>
+        )
+      default:
+        return (
+          <>
+            {san} chegou com a seleção <code>{move.selection}</code>, que esta interface ainda não
+            conhece. O lance foi jogado; a classificação não pode ser afirmada.
+          </>
+        )
+    }
+  }
+
+  return (
+    <div className="grid gap-1">
+      <span className="flex items-center gap-2">
+        <SelectionMark kind={move.selection} />
+        <span className="font-mono text-[0.74rem] font-semibold tracking-[0.02em] text-ink-2">
+          {meta.label}
+        </span>
+        <span className="text-[0.72rem] text-ink-4">{meta.short}</span>
+      </span>
+      <p className="m-0 text-[0.86rem] leading-snug text-ink-2">{sentence()}</p>
+    </div>
+  )
+}
+
+function PlyCell({
+  entry,
   current,
   onSelect,
 }: {
-  index: number
-  move: Match["moves"][number]
+  entry: { index: number; move: MatchMove } | undefined
   current: number
   onSelect: (index: number) => void
 }) {
-  const active = index === current
+  if (!entry) return <td className="p-0" />
+  const active = entry.index === current
   return (
-    <button
-      type="button"
-      data-ply={index}
-      tabIndex={active ? 0 : -1}
-      aria-current={active || undefined}
-      onClick={() => onSelect(index)}
-      className={cn(
-        "flex w-full items-baseline justify-between gap-2 rounded-sm border border-transparent px-1.5 py-0.5 text-left text-[0.85rem] text-ink-2",
-        active
-          ? "border-border-strong bg-elevated text-foreground"
-          : "hover:border-border-soft hover:bg-secondary",
-      )}
-      title={`${SIDE_NAMES[move.color]} · ${SELECTION_META[move.selection].label}`}
-    >
-      <span className="font-medium">{move.san}</span>
-      <SelectionMark kind={move.selection} className="text-[0.8rem]" />
-    </button>
+    <td className="p-0">
+      <button
+        type="button"
+        data-ply={entry.index}
+        tabIndex={active ? 0 : -1}
+        aria-current={active || undefined}
+        onClick={() => onSelect(entry.index)}
+        className={cn(
+          "flex w-full items-baseline justify-between gap-1.5 px-1.5 py-[3px] text-left text-[0.84rem] text-ink-2",
+          active
+            ? "bg-elevated text-foreground shadow-[inset_2px_0_0_0_var(--brass)]"
+            : "hover:bg-secondary",
+        )}
+        title={`${SIDE_NAMES[entry.move.color]} · ${selectionMeta(entry.move.selection).label}`}
+      >
+        <span className="font-medium">{entry.move.san}</span>
+        <SelectionMark kind={entry.move.selection} className="text-[0.78rem]" />
+      </button>
+    </td>
   )
 }
 
-function SideRow({
+function SideSetup({
   color,
   profile,
   onChange,
   strengths,
   locked,
-  thinking,
-  moves,
 }: {
   color: Color
   profile: MatchProfileInput
   onChange: (next: MatchProfileInput) => void
   strengths: Strength[] | null
   locked: boolean
-  thinking: boolean
-  moves: Match["moves"]
 }) {
-  const counts = SELECTION_ORDER.map((kind) => ({
-    kind,
-    total: moves.filter((move) => move.color === color && move.selection === kind).length,
-  }))
-  const played = counts.reduce((sum, item) => sum + item.total, 0)
-
+  const side = SIDE_NAMES[color].toLowerCase()
   return (
-    <div
-      className={cn(
-        "grid gap-2 rounded-md border border-border-soft border-l-2 bg-secondary px-3 py-2.5",
-        thinking ? "border-l-brass" : "border-l-transparent",
-      )}
-    >
-      <div className="flex items-center gap-2">
-        <span
-          aria-hidden
-          className={cn(
-            "size-3 rounded-full border-[1.5px]",
-            color === "white" ? "border-foreground bg-foreground" : "border-ink-2 bg-transparent",
-          )}
-        />
-        <span className="text-[0.82rem] font-semibold">{SIDE_NAMES[color]}</span>
-        {thinking && <span className="label-micro animate-breathe">analisando</span>}
-      </div>
-
-      <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] gap-2 max-[560px]:grid-cols-1">
-        {strengths ? (
-          <Select
-            value={profile.strength_key}
-            onValueChange={(value) => onChange({ ...profile, strength_key: value })}
-            disabled={locked}
-          >
-            <SelectTrigger size="sm" aria-label={`Força das ${SIDE_NAMES[color].toLowerCase()}`}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {strengths.map((level) => (
-                <SelectItem key={level.key} value={level.key}>
-                  {level.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : (
-          <Skeleton className="h-8 w-full" />
-        )}
+    <div className="grid grid-cols-[auto_minmax(0,1.35fr)_minmax(0,1fr)] items-center gap-1.5 max-[420px]:grid-cols-1">
+      <span className="flex items-center gap-1.5 pr-1">
+        <SideBadge color={color} />
+        <span className="text-[0.78rem] font-medium">{SIDE_NAMES[color]}</span>
+      </span>
+      {strengths ? (
         <Select
-          value={profile.policy}
-          onValueChange={(value) => onChange({ ...profile, policy: value as MatchPolicy })}
+          value={profile.strength_key}
+          onValueChange={(value) => onChange({ ...profile, strength_key: value })}
           disabled={locked}
         >
-          <SelectTrigger size="sm" aria-label={`Política das ${SIDE_NAMES[color].toLowerCase()}`}>
+          <SelectTrigger size="sm" aria-label={`Força das ${side}`}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="strict_v1">strict_v1</SelectItem>
-            <SelectItem value="normal">normal</SelectItem>
+            {strengths.map((level) => (
+              <SelectItem key={level.key} value={level.key}>
+                {level.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
-      </div>
-
-      {played > 0 && (
-        <div className="flex gap-3.5 numeric text-[0.72rem] text-ink-4">
-          {counts.map((item) => (
-            <span key={item.kind} className="flex items-baseline gap-1">
-              <b className="font-semibold text-ink-2">{item.total}</b>
-              {SELECTION_META[item.kind].label}
-            </span>
-          ))}
-        </div>
+      ) : (
+        <Skeleton className="h-8 w-full" />
       )}
+      <Select
+        value={profile.policy}
+        onValueChange={(value) => onChange({ ...profile, policy: value as MatchPolicy })}
+        disabled={locked}
+      >
+        <SelectTrigger size="sm" aria-label={`Política das ${side}`}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="strict_v1">strict_v1</SelectItem>
+          <SelectItem value="normal">normal</SelectItem>
+        </SelectContent>
+      </Select>
     </div>
   )
 }
 
-function StateMark({ state }: { state: DeckState }) {
+function StateMark({ state }: { state: DeskState }) {
   return (
     <span
       aria-hidden
@@ -663,7 +810,7 @@ function StateMark({ state }: { state: DeckState }) {
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="rounded-sm border border-border bg-secondary px-1 text-[0.7rem] text-ink-2">
+    <kbd className="rounded-sm border border-border bg-secondary px-1 text-[0.68rem] text-ink-2">
       {children}
     </kbd>
   )
