@@ -11,7 +11,7 @@ from dataclasses import dataclass, replace
 
 from brilliant_chess.domain.errors import DomainError
 from brilliant_chess.domain.strength import EngineStrength, strength_by_key
-from brilliant_chess.domain.values import Color, GameStatus
+from brilliant_chess.domain.values import GAME_STATUS_TEXTS, Color, GameStatus
 from brilliant_chess.ports.board import BoardService, BoardView
 from brilliant_chess.ports.engine import PlayableEngine
 
@@ -99,10 +99,7 @@ def undo_full_move(board: BoardService, state: GameState) -> GameState:
 
 
 _DRAW_TEXTS = {
-    GameStatus.STALEMATE: "Empate por afogamento",
-    GameStatus.DRAW_INSUFFICIENT_MATERIAL: "Empate por material insuficiente",
-    GameStatus.DRAW_FIFTY_MOVES: "Empate pela regra dos cinquenta lances",
-    GameStatus.DRAW_THREEFOLD_REPETITION: "Empate por tripla repeticao",
+    status: text for status, text in GAME_STATUS_TEXTS.items() if status is not GameStatus.CHECKMATE
 }
 
 

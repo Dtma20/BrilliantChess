@@ -73,6 +73,17 @@ class GameStatus(StrEnum):
         return self is not GameStatus.IN_PROGRESS
 
 
+#: Texto canonico de cada desfecho. Vive aqui para que o seletor e o ciclo de
+#: partida descrevam o mesmo termino com as mesmas palavras.
+GAME_STATUS_TEXTS: Final[dict[GameStatus, str]] = {
+    GameStatus.CHECKMATE: "Xeque-mate",
+    GameStatus.STALEMATE: "Empate por afogamento",
+    GameStatus.DRAW_INSUFFICIENT_MATERIAL: "Empate por material insuficiente",
+    GameStatus.DRAW_FIFTY_MOVES: "Empate pela regra dos cinquenta lances",
+    GameStatus.DRAW_THREEFOLD_REPETITION: "Empate por tripla repetição",
+}
+
+
 class AnalysisState(StrEnum):
     PENDING = "pending"
     RUNNING = "running"

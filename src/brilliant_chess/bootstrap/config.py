@@ -60,6 +60,12 @@ class ConfidenceWeightsModel(_Strict):
 
 
 class SacrificeModel(_Strict):
+    """Limiares comuns a ``DESTINATION_OFFER`` e ``LEFT_HANGING``.
+
+    O tipo de evidencia muda o que e medido, nao o quanto se exige, entao nao ha
+    limiar por tipo.
+    """
+
     min_nominal_value: float = Field(default=2.75, gt=0.0)
     min_confidence: float = Field(default=0.70, ge=0.0, le=1.0)
     acceptance_search_plies: int = Field(default=4, ge=1)
@@ -68,7 +74,7 @@ class SacrificeModel(_Strict):
 
 
 class RobustnessModel(_Strict):
-    """Limiares entre buscas; a excecao de mate terminal e regra de dominio."""
+    """Limiares entre buscas; a excecao de posicao terminal e regra de dominio."""
 
     max_ep_drift_on_deeper_search: float = Field(default=0.02, ge=0.0, le=1.0)
     min_pv_overlap_plies: int = Field(default=2, ge=0)

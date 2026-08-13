@@ -43,6 +43,12 @@ class SacrificeConfidenceWeights:
 
 @dataclass(frozen=True)
 class SacrificeThresholds:
+    """Limiares comuns a todos os tipos de evidencia.
+
+    ``DESTINATION_OFFER`` e ``LEFT_HANGING`` compartilham estes valores: o tipo
+    muda o que e medido, nunca o quanto se exige. Ver docs/domain-rules.md.
+    """
+
     min_nominal_value: float = 2.75
     min_confidence: float = 0.70
     acceptance_search_plies: int = 4
@@ -54,7 +60,12 @@ class SacrificeThresholds:
 
 @dataclass(frozen=True)
 class RobustnessThresholds:
-    """Limiares entre buscas; mate confirmado pelo tabuleiro e terminal."""
+    """Limiares entre buscas.
+
+    Posicao terminal confirmada pelo tabuleiro nao passa por aqui: mate e empate
+    imediato dispensam melhor defesa e estabilidade, e o empate vale 0.5 de
+    pontos esperados por regra do jogo.
+    """
 
     max_ep_drift_on_deeper_search: float = 0.02
     min_pv_overlap_plies: int = 2

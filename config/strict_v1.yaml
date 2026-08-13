@@ -19,6 +19,10 @@ rules:
     max_expected_points_before: 0.95
 
   sacrifice:
+    # Tipos implementados: DESTINATION_OFFER (oferta na casa de destino) e
+    # LEFT_HANGING (peca deixada capturavel fora do destino). Nenhum dos dois
+    # tem limiar proprio: os dois alimentam GATE_SACRIFICE_001 pelos campos
+    # abaixo. Ver docs/domain-rules.md e ADR 0008.
     min_nominal_value: 2.75
     min_confidence: 0.70
     acceptance_search_plies: 4
@@ -31,7 +35,8 @@ rules:
       persists_under_deeper_search: 0.15
 
   robustness:
-    # Mate confirmado pelo tabuleiro nao depende de PV ou busca de estabilidade.
+    # Posicao terminal confirmada pelo tabuleiro (mate ou empate) nao depende de
+    # PV nem de busca de estabilidade; empate imediato vale 0.5 EP por regra.
     max_ep_drift_on_deeper_search: 0.02
     min_pv_overlap_plies: 2
     # Margem unica usada tanto por GATE_STABILITY_001 quanto pelo estagio de

@@ -5,6 +5,7 @@ from brilliant_chess.application import choose_brilliant_move as selector
 from brilliant_chess.application.analyze_position import Candidate, PositionAnalysis
 from brilliant_chess.application.choose_brilliant_move import (
     CandidateAudit,
+    PositionHistory,
     StrictSearchBudget,
     choose_brilliant_move,
 )
@@ -12,11 +13,24 @@ from brilliant_chess.domain.gates import GateResult
 from brilliant_chess.domain.models import AnalysisBudget, EngineIdentity, Position
 from brilliant_chess.domain.sacrifice import NO_SACRIFICE
 from brilliant_chess.domain.scoring import BrilliantDecision, ScoreBreakdown
-from brilliant_chess.domain.values import Color, GateId, GateStatus
+from brilliant_chess.domain.values import (
+    Color,
+    GameStatus,
+    GateId,
+    GateStatus,
+    SacrificeKind,
+)
 from tests.fakes.scripted_engine import ScriptedEngine, ScriptKey, evaluation
 
 POSITION_FEN = "7r/7p/8/7Q/8/8/8/6KR w - - 0 1"
 MATE_IN_ONE_FEN = "5k2/2pQ1rp1/2P5/7p/n1rbb2P/4B3/P4PP1/6K1 w - - 4 37"
+LEFT_HANGING_ROOK_FEN = "r2qkb1r/1p3p1p/5np1/3Ppb2/7Q/p1N2N2/PP2PPPP/1RB1KB1R w Kkq - 2 14"
+#: Vaivem de torre e rei que faz a candidata ``b2b1`` completar a tripla
+#: repeticao. Sem historico, nem o tabuleiro nem o motor veem o empate.
+REPETITION_INITIAL_FEN = "7k/8/8/8/8/8/8/1R2Q1K1 b - - 0 1"
+REPETITION_HISTORY = ("h8g8", "b1b2", "g8h8", "b2b1", "h8g8", "b1b2", "g8h8")
+REPETITION_FEN = "7k/8/8/8/8/8/1R6/4Q1K1 w - - 7 5"
+STALEMATE_FEN = "7k/8/8/8/8/8/8/5Q1K w - - 0 1"
 DISCOVERY = AnalysisBudget(nodes=10)
 CONFIRMATION = AnalysisBudget(nodes=20)
 BEST_DEFENSE = AnalysisBudget(nodes=30)
@@ -70,7 +84,11 @@ def engine_for(
 
 def test_selects_candidate_when_all_seven_gates_pass(rules):
     choice = choose_brilliant_move(
-        engine_for(), PythonChessBoardService(), Position.from_fen(POSITION_FEN), rules, budget()
+        engine_for(),
+        PythonChessBoardService(),
+        PositionHistory(POSITION_FEN),
+        rules,
+        budget(),
     )
 
     assert choice.move is not None
@@ -83,7 +101,7 @@ def test_best_defense_search_accepts_small_cross_search_ep_improvement(rules):
     choice = choose_brilliant_move(
         engine_for(best_defense_centipawns=-60),
         PythonChessBoardService(),
-        Position.from_fen(POSITION_FEN),
+        PositionHistory(POSITION_FEN),
         rules,
         budget(),
     )
@@ -100,7 +118,7 @@ def test_best_defense_search_rejects_large_cross_search_disagreement(rules):
     choice = choose_brilliant_move(
         engine_for(best_defense_centipawns=-80),
         PythonChessBoardService(),
-        Position.from_fen(POSITION_FEN),
+        PositionHistory(POSITION_FEN),
         rules,
         budget(),
     )
@@ -116,7 +134,7 @@ def test_missing_best_defense_keeps_candidate_but_rejects_it(rules):
     choice = choose_brilliant_move(
         engine_for(best_defense=False),
         PythonChessBoardService(),
-        Position.from_fen(POSITION_FEN),
+        PositionHistory(POSITION_FEN),
         rules,
         budget(),
     )
@@ -133,7 +151,7 @@ def test_missing_stability_evidence_is_indeterminate_even_far_from_a_threshold(r
     choice = choose_brilliant_move(
         engine_for(stability=False),
         PythonChessBoardService(),
-        Position.from_fen(POSITION_FEN),
+        PositionHistory(POSITION_FEN),
         rules,
         budget(stability=None),
     )
@@ -149,7 +167,7 @@ def test_missing_candidate_pv_reply_is_not_proof_of_soundness(rules):
     choice = choose_brilliant_move(
         engine_for(candidate_pv=("h5h7",)),
         PythonChessBoardService(),
-        Position.from_fen(POSITION_FEN),
+        PositionHistory(POSITION_FEN),
         rules,
         budget(),
     )
@@ -175,13 +193,146 @@ def test_checkmate_has_soundness_and_stability_without_a_defense_line(rules):
         }
     )
 
-    choice = choose_brilliant_move(engine, board, position, rules, budget())
+    choice = choose_brilliant_move(engine, board, PositionHistory(MATE_IN_ONE_FEN), rules, budget())
 
     assert choice.near_selected is not None
     assert choice.near_selected.candidate.move_uci == "d7d8"
     statuses = {gate.gate_id: gate.status for gate in choice.near_selected.decision.gates}
     assert statuses[GateId.SOUNDNESS] is GateStatus.PASSED
     assert statuses[GateId.STABILITY] is GateStatus.PASSED
+
+
+def _single_candidate_engine(
+    fen: str, move_uci: str, *, centipawns: int, defense: tuple[str, int] | None = None
+) -> ScriptedEngine:
+    position = Position.from_fen(fen)
+    script = {
+        ScriptKey(position.fen, (), DISCOVERY.nodes): (
+            evaluation(move_uci, position.side_to_move, centipawns=centipawns, pv=(move_uci,)),
+        ),
+        ScriptKey(position.fen, (move_uci,), CONFIRMATION.nodes): (
+            evaluation(move_uci, position.side_to_move, centipawns=centipawns, pv=(move_uci,)),
+        ),
+        ScriptKey(position.fen, (move_uci,), STABILITY.nodes): (
+            evaluation(move_uci, position.side_to_move, centipawns=centipawns, pv=(move_uci,)),
+        ),
+    }
+    if defense is not None:
+        after = PythonChessBoardService().position_after(fen, (move_uci,))
+        script[ScriptKey(after.fen, (), BEST_DEFENSE.nodes)] = (
+            evaluation(defense[0], after.side_to_move, centipawns=defense[1], pv=(defense[0],)),
+        )
+    return ScriptedEngine(script=script)
+
+
+def test_immediate_threefold_repetition_is_not_a_safe_near_brilliant(rules):
+    """O motor ve +9 porque nao recebe historico; o tabuleiro ve empate."""
+    board = PythonChessBoardService()
+
+    choice = choose_brilliant_move(
+        _single_candidate_engine(REPETITION_FEN, "b2b1", centipawns=900),
+        board,
+        PositionHistory(REPETITION_INITIAL_FEN, REPETITION_HISTORY),
+        rules,
+        budget(),
+    )
+
+    assert choice.move is None
+    assert choice.near_selected is None
+    audited = choice.candidates[0]
+    assert audited.candidate.expected_points_after == 0.5
+    assert audited.candidate.mate_in is None
+    assert audited.candidate.expected_points_loss > rules.selection.safe_max_expected_points_loss
+    quality = next(gate for gate in audited.decision.gates if gate.gate_id is GateId.QUALITY)
+    assert quality.status is GateStatus.FAILED
+
+
+def test_a_terminal_draw_states_the_outcome_instead_of_missing_evidence(rules):
+    board = PythonChessBoardService()
+
+    choice = choose_brilliant_move(
+        _single_candidate_engine(REPETITION_FEN, "b2b1", centipawns=900),
+        board,
+        PositionHistory(REPETITION_INITIAL_FEN, REPETITION_HISTORY),
+        rules,
+        budget(),
+    )
+
+    audited = choice.candidates[0]
+    assert audited.terminal_status is GameStatus.DRAW_THREEFOLD_REPETITION
+    soundness = next(gate for gate in audited.decision.gates if gate.gate_id is GateId.SOUNDNESS)
+    assert soundness.status is GateStatus.PASSED
+    assert "repetição" in soundness.explanation
+
+
+def test_a_draw_that_concedes_nothing_stays_selectable_as_near_brilliant(rules):
+    """Empate aceito de propria vontade: nao ha vitoria a entregar."""
+    board = PythonChessBoardService()
+
+    choice = choose_brilliant_move(
+        _single_candidate_engine(REPETITION_FEN, "b2b1", centipawns=0),
+        board,
+        PositionHistory(REPETITION_INITIAL_FEN, REPETITION_HISTORY),
+        rules,
+        budget(),
+    )
+
+    assert choice.near_selected is not None
+    assert choice.near_selected.candidate.move_uci == "b2b1"
+    assert choice.near_selected.candidate.expected_points_after == 0.5
+
+
+def test_immediate_stalemate_while_winning_is_rejected(rules):
+    board = PythonChessBoardService()
+
+    choice = choose_brilliant_move(
+        _single_candidate_engine(STALEMATE_FEN, "f1f7", centipawns=900),
+        board,
+        PositionHistory(STALEMATE_FEN),
+        rules,
+        budget(),
+    )
+
+    assert choice.move is None
+    assert choice.near_selected is None
+    assert choice.candidates[0].terminal_status is GameStatus.STALEMATE
+
+
+def test_the_selector_detects_a_piece_left_hanging_away_from_the_destination(rules):
+    board = PythonChessBoardService()
+
+    choice = choose_brilliant_move(
+        _single_candidate_engine(
+            LEFT_HANGING_ROOK_FEN, "e2e3", centipawns=30, defense=("f5b1", -20)
+        ),
+        board,
+        PositionHistory(LEFT_HANGING_ROOK_FEN),
+        rules,
+        budget(),
+    )
+
+    audited = choice.candidates[0]
+    evidence = audited.decision.sacrifice
+    assert evidence.kind is SacrificeKind.LEFT_HANGING
+    assert evidence.offered_piece_square == "b1"
+    assert audited.acceptance_san == ("Bxb1",)
+    assert audited.defense_accepted is True
+    assert audited.material_conceded > 0.0
+
+
+def test_the_root_position_comes_from_the_history(rules):
+    """Caminho e posicao nao podem divergir: existe uma unica fonte de verdade."""
+    board = PythonChessBoardService()
+
+    choice = choose_brilliant_move(
+        _single_candidate_engine(REPETITION_FEN, "b2b1", centipawns=0),
+        board,
+        PositionHistory(REPETITION_INITIAL_FEN, REPETITION_HISTORY),
+        rules,
+        budget(),
+    )
+
+    assert choice.candidates[0].candidate.move_uci == "b2b1"
 
 
 def test_eligible_audits_break_a_full_tie_by_uci(rules, monkeypatch):
@@ -209,7 +360,9 @@ def test_eligible_audits_break_a_full_tie_by_uci(rules, monkeypatch):
     monkeypatch.setattr(selector, "analyze_position", fake_analyze)
     monkeypatch.setattr(selector, "_audit_candidate", fake_audit)
 
-    choice = choose_brilliant_move(None, None, position, rules, budget())
+    choice = choose_brilliant_move(
+        None, PythonChessBoardService(), PositionHistory(POSITION_FEN), rules, budget()
+    )
 
     assert [audit.candidate.move_uci for audit in choice.candidates] == ["a1a2", "b1b2"]
     assert choice.move is not None
@@ -249,7 +402,9 @@ def test_selects_safest_near_brilliant_when_none_is_strictly_eligible(rules, mon
         selector, "_audit_candidate", lambda _context, candidate: audits[candidate.move_uci]
     )
 
-    choice = choose_brilliant_move(None, None, position, rules, budget())
+    choice = choose_brilliant_move(
+        None, PythonChessBoardService(), PositionHistory(POSITION_FEN), rules, budget()
+    )
 
     assert choice.move is None
     assert choice.selected is None
@@ -284,7 +439,9 @@ def test_near_brilliant_prioritizes_objective_quality_over_diagnostic_score(rule
         selector, "_audit_candidate", lambda _context, candidate: by_move[candidate.move_uci]
     )
 
-    choice = choose_brilliant_move(None, None, position, rules, budget())
+    choice = choose_brilliant_move(
+        None, PythonChessBoardService(), PositionHistory(POSITION_FEN), rules, budget()
+    )
 
     assert choice.near_selected == objectively_best
 

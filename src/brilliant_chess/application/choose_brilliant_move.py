@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from typing import Final
 
 from brilliant_chess.application.analyze_position import (
     AnalysisRequest,
     Candidate,
     analyze_position,
 )
-from brilliant_chess.application.sacrifice_detector import detect_destination_offer
+from brilliant_chess.application.sacrifice_detector import detect_sacrifice
 from brilliant_chess.domain.errors import EngineError, InvalidEvaluationError
 from brilliant_chess.domain.expected_points import expected_points_loss
 from brilliant_chess.domain.gates import GateInputs, GateResult, evaluate_gates
@@ -23,7 +24,12 @@ from brilliant_chess.domain.sacrifice import (
     sacrifice_confidence,
 )
 from brilliant_chess.domain.scoring import BrilliantDecision, ScoringInputs, decide
-from brilliant_chess.domain.values import GameStatus, GateId, GateStatus
+from brilliant_chess.domain.values import (
+    GAME_STATUS_TEXTS,
+    GameStatus,
+    GateId,
+    GateStatus,
+)
 from brilliant_chess.ports.board import BoardService
 from brilliant_chess.ports.engine import ChessEngine
 
@@ -37,6 +43,26 @@ _NEAR_BRILLIANT_SAFETY_GATES = frozenset(
         GateId.STABILITY,
     }
 )
+
+#: Empate vale meio ponto. Isto e regra do jogo, nao estimativa de motor.
+DRAW_EXPECTED_POINTS: Final[float] = 0.5
+
+
+@dataclass(frozen=True)
+class PositionHistory:
+    """Caminho ate a posicao raiz.
+
+    Repeticao e a regra dos cinquenta lances nao estao na FEN. Sem o caminho, o
+    ``BoardService`` nao consegue declarar tripla repeticao e o motor tambem nao
+    a ve, porque recebe apenas a posicao.
+    """
+
+    initial_fen: str
+    moves_uci: tuple[str, ...] = ()
+
+    @classmethod
+    def from_position(cls, position: Position) -> PositionHistory:
+        return cls(initial_fen=position.fen, moves_uci=())
 
 
 @dataclass(frozen=True)
@@ -55,6 +81,16 @@ class CandidateAudit:
     decision: BrilliantDecision
     best_defense_uci: str | None
     stability_depth: int | None
+    #: SAN da melhor defesa medida, para a auditoria falar em notacao de xadrez.
+    best_defense_san: str | None = None
+    #: SAN das capturas que aceitam a peca oferecida.
+    acceptance_san: tuple[str, ...] = ()
+    #: A melhor defesa medida aceita a oferta.
+    defense_accepted: bool = False
+    #: Material liquido concedido quando a melhor defesa aceita.
+    material_conceded: float = 0.0
+    #: Desfecho imediato da candidata, quando ela encerra a partida.
+    terminal_status: GameStatus | None = None
 
 
 @dataclass(frozen=True)
@@ -74,6 +110,7 @@ class _AuditContext:
     budget: StrictSearchBudget
     candidates: tuple[Candidate, ...]
     expected_points_before: float
+    history: PositionHistory
 
 
 @dataclass(frozen=True)
@@ -87,11 +124,17 @@ class _MeasuredEvidence:
 def choose_brilliant_move(
     engine: ChessEngine,
     board: BoardService,
-    position: Position,
+    history: PositionHistory,
     rules: RuleSet,
     budget: StrictSearchBudget,
 ) -> BrilliantMoveChoice:
-    """Confirma candidatas, mede defesas e seleciona somente as elegiveis."""
+    """Confirma candidatas, mede defesas e seleciona somente as elegiveis.
+
+    A posicao raiz sai do proprio ``history``: assim caminho e posicao nao podem
+    divergir, e as regras que dependem de historico ficam sempre disponiveis.
+    """
+    position = board.position_after(history.initial_fen, history.moves_uci)
+    path = history
     analysis = analyze_position(
         engine,
         board,
@@ -104,7 +147,14 @@ def choose_brilliant_move(
         ),
     )
     context = _AuditContext(
-        engine, board, position, rules, budget, analysis.candidates, analysis.expected_points_before
+        engine,
+        board,
+        position,
+        rules,
+        budget,
+        analysis.candidates,
+        analysis.expected_points_before,
+        path,
     )
     audits = tuple(_audit_candidate(context, candidate) for candidate in analysis.candidates)
     eligible = sorted(
@@ -168,18 +218,24 @@ def _audit_candidate(context: _AuditContext, candidate: Candidate) -> CandidateA
     rules = context.rules
     budget = context.budget
     move = board.normalize_move(position, candidate.move_uci)
-    after = board.view(position.fen, (move.uci,))
+    after = board.view(context.history.initial_fen, (*context.history.moves_uci, move.uci))
+    terminal_status = after.status if after.status.is_finished else None
     terminal_checkmate = after.status is GameStatus.CHECKMATE
-    sacrifice = detect_destination_offer(
+    terminal_draw = terminal_status is not None and not terminal_checkmate
+    if terminal_draw:
+        candidate = _as_immediate_draw(candidate, context.expected_points_before)
+    sacrifice = detect_sacrifice(
         board,
         position,
         move.uci,
         material_values=rules.material_values,
         confidence_weights=rules.sacrifice.confidence_weights,
     )
-    defense = None if terminal_checkmate else _first(engine, after.position, budget.best_defense)
+    defense = (
+        None if terminal_status is not None else _first(engine, after.position, budget.best_defense)
+    )
     best_defense_uci = None if defense is None else defense.move_uci
-    defense_loss = 0.0 if terminal_checkmate else None
+    defense_loss = 0.0 if terminal_status is not None else None
     best_defense_disagrees = False
     depends_on_opponent_error = False
     material_conceded = 0.0
@@ -211,7 +267,7 @@ def _audit_candidate(context: _AuditContext, candidate: Candidate) -> CandidateA
 
     stable = (
         None
-        if terminal_checkmate or budget.stability is None
+        if terminal_status is not None or budget.stability is None
         else _first(engine, position, budget.stability, root_move=move)
     )
     drift = None if stable is None else stable.expected_points - candidate.expected_points_after
@@ -261,14 +317,52 @@ def _audit_candidate(context: _AuditContext, candidate: Candidate) -> CandidateA
         rules,
         has_stability_evidence=stable is not None,
         best_defense_disagrees=best_defense_disagrees,
-        terminal_checkmate=terminal_checkmate,
+        terminal_status=terminal_status,
     )
     return CandidateAudit(
         candidate=candidate,
         decision=decide(gates, scoring, rules),
         best_defense_uci=best_defense_uci,
         stability_depth=None if stable is None else stable.depth,
+        best_defense_san=_san_of(board, after.position, best_defense_uci),
+        acceptance_san=_each_san(board, after.position, sacrifice.acceptance_moves),
+        defense_accepted=best_defense_uci is not None
+        and best_defense_uci in sacrifice.acceptance_moves,
+        material_conceded=material_conceded,
+        terminal_status=terminal_status,
     )
+
+
+def _as_immediate_draw(candidate: Candidate, expected_points_before: float) -> Candidate:
+    """Reescreve a avaliacao de uma candidata que encerra a partida em empate.
+
+    O motor recebe apenas a posicao, entao nao ve repeticao nem a regra dos
+    cinquenta lances e pode devolver uma vantagem grande para uma linha que, na
+    partida real, termina em meio ponto. Quem manda aqui e o tabuleiro.
+    """
+    return replace(
+        candidate,
+        expected_points_after=DRAW_EXPECTED_POINTS,
+        expected_points_loss=max(0.0, expected_points_before - DRAW_EXPECTED_POINTS),
+        centipawns=0,
+        mate_in=None,
+    )
+
+
+def _each_san(
+    board: BoardService, position: Position, moves_uci: tuple[str, ...]
+) -> tuple[str, ...]:
+    """SAN de cada lance alternativo, cada um a partir da mesma posicao."""
+    return tuple(_san(board, position, uci) for uci in moves_uci)
+
+
+def _san_of(board: BoardService, position: Position, move_uci: str | None) -> str | None:
+    return None if move_uci is None else _san(board, position, move_uci)
+
+
+def _san(board: BoardService, position: Position, move_uci: str) -> str:
+    normalized = board.normalize_move(position, move_uci)
+    return normalized.san or normalized.uci
 
 
 def _strict_gates(
@@ -277,10 +371,10 @@ def _strict_gates(
     *,
     has_stability_evidence: bool,
     best_defense_disagrees: bool,
-    terminal_checkmate: bool,
+    terminal_status: GameStatus | None,
 ) -> tuple[GateResult, ...]:
     gates = evaluate_gates(inputs, rules)
-    if terminal_checkmate:
+    if terminal_status is GameStatus.CHECKMATE:
         gates = _mark_gate_passed(
             gates,
             GateId.SOUNDNESS,
@@ -290,6 +384,20 @@ def _strict_gates(
             gates,
             GateId.STABILITY,
             "Mate confirmado pelo tabuleiro; nao ha linha adicional a estabilizar",
+        )
+    elif terminal_status is not None:
+        # Empate terminal nao tem defesa nem continuacao. O custo de escolher
+        # um empate aparece em GATE_QUALITY_001, com EP fixado em 0.5.
+        outcome = GAME_STATUS_TEXTS[terminal_status]
+        gates = _mark_gate_passed(
+            gates,
+            GateId.SOUNDNESS,
+            f"{outcome} confirmado pelo tabuleiro; a partida termina aqui",
+        )
+        gates = _mark_gate_passed(
+            gates,
+            GateId.STABILITY,
+            f"{outcome} confirmado pelo tabuleiro; nao ha linha posterior a estabilizar",
         )
     elif not has_stability_evidence:
         gates = _mark_gate_indeterminate(
