@@ -117,8 +117,7 @@ def build_pgn(
     current: BoardView,
     *,
     standard_fen: str,
-) -> str:
-    ...
+) -> str: ...
 ~~~
 
 Regras exatas:
