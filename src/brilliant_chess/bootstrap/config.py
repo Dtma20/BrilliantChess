@@ -68,6 +68,8 @@ class SacrificeModel(_Strict):
 
 
 class RobustnessModel(_Strict):
+    """Limiares entre buscas; a excecao de mate terminal e regra de dominio."""
+
     max_ep_drift_on_deeper_search: float = Field(default=0.02, ge=0.0, le=1.0)
     min_pv_overlap_plies: int = Field(default=2, ge=0)
     stability_threshold_margin: float = Field(default=0.01, ge=0.0, le=1.0)

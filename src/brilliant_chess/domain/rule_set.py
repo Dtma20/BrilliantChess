@@ -54,6 +54,8 @@ class SacrificeThresholds:
 
 @dataclass(frozen=True)
 class RobustnessThresholds:
+    """Limiares entre buscas; mate confirmado pelo tabuleiro e terminal."""
+
     max_ep_drift_on_deeper_search: float = 0.02
     min_pv_overlap_plies: int = 2
     #: Distancia de um limiar abaixo da qual a falta de estagio de estabilidade

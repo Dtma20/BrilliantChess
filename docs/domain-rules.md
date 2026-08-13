@@ -169,9 +169,15 @@ Camadas, nesta ordem:
 Uma `near_brilliant` pode falhar nos criterios de classificacao (por exemplo,
 na exigencia de sacrificio), mas nunca nos criterios de seguranca. Ela e marcada
 como `selection=near_brilliant` no retorno da API e no PGN, sem receber o rotulo
-de brilhante. Dentro dessa camada, os desempates sao maior score diagnostico,
-menor `EP_loss` e ordem UCI estavel. A primeira camada nunca e relaxada para
-forcar um sacrificio.
+de brilhante. Dentro dessa camada, os desempates sao menor `EP_loss`, mate
+vencedor mais curto, maior score diagnostico e ordem UCI estavel. O score nunca
+supera uma alternativa objetivamente melhor.
+
+Quando a jogada candidata produz xeque-mate confirmado pelas regras do
+tabuleiro, `GATE_SOUNDNESS_001` e `GATE_STABILITY_001` sao aprovados: nao existe
+defesa legal nem PV adicional para comparar. Essa excecao vale somente para
+xeque-mate, nao para outras posicoes terminais. A primeira camada nunca e
+relaxada para forcar um sacrificio.
 
 ## Perfil por rating
 
@@ -186,3 +192,4 @@ aproximado.
 | --- | --- | --- |
 | `strict_v1` | 2026-08-12 | Definicao inicial dos sete portoes, mapeamentos de EP e pesos de pontuacao. |
 | `strict_v1` | 2026-08-13 | Fallback `near_brilliant` seguro antes da jogada normal do perfil. |
+| `strict_v1` | 2026-08-13 | Mate terminal confirma solidez/estabilidade; desempate quase brilhante prioriza qualidade objetiva. |

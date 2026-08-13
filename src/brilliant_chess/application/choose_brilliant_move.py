@@ -23,7 +23,7 @@ from brilliant_chess.domain.sacrifice import (
     sacrifice_confidence,
 )
 from brilliant_chess.domain.scoring import BrilliantDecision, ScoringInputs, decide
-from brilliant_chess.domain.values import GateId, GateStatus
+from brilliant_chess.domain.values import GameStatus, GateId, GateStatus
 from brilliant_chess.ports.board import BoardService
 from brilliant_chess.ports.engine import ChessEngine
 
@@ -142,12 +142,18 @@ def _select_near_brilliant(
     return min(
         safe,
         key=lambda audit: (
-            -audit.decision.score,
             audit.candidate.expected_points_loss,
+            _winning_mate_distance(audit),
+            -audit.decision.score,
             audit.candidate.move_uci,
         ),
         default=None,
     )
+
+
+def _winning_mate_distance(audit: CandidateAudit) -> float:
+    mate_in = audit.candidate.mate_in
+    return float(mate_in) if mate_in is not None and mate_in > 0 else float("inf")
 
 
 def _near_brilliant_safety_gates_passed(audit: CandidateAudit) -> bool:
@@ -163,6 +169,7 @@ def _audit_candidate(context: _AuditContext, candidate: Candidate) -> CandidateA
     budget = context.budget
     move = board.normalize_move(position, candidate.move_uci)
     after = board.view(position.fen, (move.uci,))
+    terminal_checkmate = after.status is GameStatus.CHECKMATE
     sacrifice = detect_destination_offer(
         board,
         position,
@@ -170,9 +177,9 @@ def _audit_candidate(context: _AuditContext, candidate: Candidate) -> CandidateA
         material_values=rules.material_values,
         confidence_weights=rules.sacrifice.confidence_weights,
     )
-    defense = _first(engine, after.position, budget.best_defense)
+    defense = None if terminal_checkmate else _first(engine, after.position, budget.best_defense)
     best_defense_uci = None if defense is None else defense.move_uci
-    defense_loss = None
+    defense_loss = 0.0 if terminal_checkmate else None
     best_defense_disagrees = False
     depends_on_opponent_error = False
     material_conceded = 0.0
@@ -204,7 +211,7 @@ def _audit_candidate(context: _AuditContext, candidate: Candidate) -> CandidateA
 
     stable = (
         None
-        if budget.stability is None
+        if terminal_checkmate or budget.stability is None
         else _first(engine, position, budget.stability, root_move=move)
     )
     drift = None if stable is None else stable.expected_points - candidate.expected_points_after
@@ -254,6 +261,7 @@ def _audit_candidate(context: _AuditContext, candidate: Candidate) -> CandidateA
         rules,
         has_stability_evidence=stable is not None,
         best_defense_disagrees=best_defense_disagrees,
+        terminal_checkmate=terminal_checkmate,
     )
     return CandidateAudit(
         candidate=candidate,
@@ -269,9 +277,21 @@ def _strict_gates(
     *,
     has_stability_evidence: bool,
     best_defense_disagrees: bool,
+    terminal_checkmate: bool,
 ) -> tuple[GateResult, ...]:
     gates = evaluate_gates(inputs, rules)
-    if not has_stability_evidence:
+    if terminal_checkmate:
+        gates = _mark_gate_passed(
+            gates,
+            GateId.SOUNDNESS,
+            "Mate confirmado pelo tabuleiro; nao ha defesa legal",
+        )
+        gates = _mark_gate_passed(
+            gates,
+            GateId.STABILITY,
+            "Mate confirmado pelo tabuleiro; nao ha linha adicional a estabilizar",
+        )
+    elif not has_stability_evidence:
         gates = _mark_gate_indeterminate(
             gates,
             GateId.STABILITY,
@@ -287,6 +307,22 @@ def _strict_gates(
             ),
         )
     return gates
+
+
+def _mark_gate_passed(
+    gates: tuple[GateResult, ...], gate_id: GateId, explanation: str
+) -> tuple[GateResult, ...]:
+    return tuple(
+        replace(
+            gate,
+            status=GateStatus.PASSED,
+            measured_value=0.0,
+            explanation=explanation,
+        )
+        if gate.gate_id is gate_id
+        else gate
+        for gate in gates
+    )
 
 
 def _mark_gate_indeterminate(

@@ -31,6 +31,7 @@ rules:
       persists_under_deeper_search: 0.15
 
   robustness:
+    # Mate confirmado pelo tabuleiro nao depende de PV ou busca de estabilidade.
     max_ep_drift_on_deeper_search: 0.02
     min_pv_overlap_plies: 2
     # Margem unica usada tanto por GATE_STABILITY_001 quanto pelo estagio de

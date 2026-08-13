@@ -16,6 +16,7 @@ from brilliant_chess.domain.values import Color, GateId, GateStatus
 from tests.fakes.scripted_engine import ScriptedEngine, ScriptKey, evaluation
 
 POSITION_FEN = "7r/7p/8/7Q/8/8/8/6KR w - - 0 1"
+MATE_IN_ONE_FEN = "5k2/2pQ1rp1/2P5/7p/n1rbb2P/4B3/P4PP1/6K1 w - - 4 37"
 DISCOVERY = AnalysisBudget(nodes=10)
 CONFIRMATION = AnalysisBudget(nodes=20)
 BEST_DEFENSE = AnalysisBudget(nodes=30)
@@ -160,6 +161,29 @@ def test_missing_candidate_pv_reply_is_not_proof_of_soundness(rules):
     assert soundness.status is GateStatus.FAILED
 
 
+def test_checkmate_has_soundness_and_stability_without_a_defense_line(rules):
+    board = PythonChessBoardService()
+    position = Position.from_fen(MATE_IN_ONE_FEN)
+    engine = ScriptedEngine(
+        script={
+            ScriptKey(position.fen, (), DISCOVERY.nodes): (
+                evaluation("d7d8", Color.WHITE, mate_in=1, pv=("d7d8",)),
+            ),
+            ScriptKey(position.fen, ("d7d8",), CONFIRMATION.nodes): (
+                evaluation("d7d8", Color.WHITE, mate_in=1, pv=("d7d8",)),
+            ),
+        }
+    )
+
+    choice = choose_brilliant_move(engine, board, position, rules, budget())
+
+    assert choice.near_selected is not None
+    assert choice.near_selected.candidate.move_uci == "d7d8"
+    statuses = {gate.gate_id: gate.status for gate in choice.near_selected.decision.gates}
+    assert statuses[GateId.SOUNDNESS] is GateStatus.PASSED
+    assert statuses[GateId.STABILITY] is GateStatus.PASSED
+
+
 def test_eligible_audits_break_a_full_tie_by_uci(rules, monkeypatch):
     position = Position.from_fen(POSITION_FEN)
     candidates = (
@@ -230,6 +254,39 @@ def test_selects_safest_near_brilliant_when_none_is_strictly_eligible(rules, mon
     assert choice.move is None
     assert choice.selected is None
     assert choice.near_selected == closest
+
+
+def test_near_brilliant_prioritizes_objective_quality_over_diagnostic_score(rules, monkeypatch):
+    position = Position.from_fen(POSITION_FEN)
+    objectively_best = _non_selectable_audit(
+        _candidate("a1a2", expected_points_loss=0.001),
+        score=43.0,
+        failed_gates=(GateId.SACRIFICE,),
+    )
+    stylistic_but_worse = _non_selectable_audit(
+        _candidate("b1b2", expected_points_loss=0.010),
+        score=95.0,
+        failed_gates=(GateId.SACRIFICE,),
+    )
+    audits = (objectively_best, stylistic_but_worse)
+    analysis = PositionAnalysis(
+        position=position,
+        side_to_move=Color.WHITE,
+        engine=EngineIdentity("test", "1", "0" * 64, None),
+        expected_points_before=0.5,
+        candidates=tuple(audit.candidate for audit in audits),
+        warnings=(),
+    )
+    by_move = {audit.candidate.move_uci: audit for audit in audits}
+
+    monkeypatch.setattr(selector, "analyze_position", lambda *_: analysis)
+    monkeypatch.setattr(
+        selector, "_audit_candidate", lambda _context, candidate: by_move[candidate.move_uci]
+    )
+
+    choice = choose_brilliant_move(None, None, position, rules, budget())
+
+    assert choice.near_selected == objectively_best
 
 
 def _candidate(move_uci: str, *, expected_points_loss: float = 0.01) -> Candidate:
