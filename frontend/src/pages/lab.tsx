@@ -366,7 +366,11 @@ export function LabPage() {
         )}
 
         <Register title="Mesa">
-          <div className="grid gap-1.5">
+          {/* Uma grade para as duas cores: rótulo, força e política ficam na
+              mesma coluna nas duas linhas. */}
+          {/* 1.7:1 é o que faz "Máximo (sem limite)" caber inteiro nos 392px do
+              trilho; a coluna da política só precisa de "strict_v1". */}
+          <div className="grid grid-cols-[auto_minmax(0,1.7fr)_minmax(0,1fr)] items-center gap-x-1.5 gap-y-1.5 max-[420px]:grid-cols-1">
             <SideSetup
               color="white"
               profile={white}
@@ -793,8 +797,11 @@ function SideSetup({
   locked: boolean
 }) {
   const side = SIDE_NAMES[color].toLowerCase()
+  // Fragmento, não `div`: as duas cores dividem a grade do pai, então a coluna
+  // do rótulo mede uma vez só. Em grades separadas, `auto` resolvia 74px para
+  // "Brancas" e 65px para "Pretas" e as linhas saíam desalinhadas.
   return (
-    <div className="grid grid-cols-[auto_minmax(0,1.35fr)_minmax(0,1fr)] items-center gap-1.5 max-[420px]:grid-cols-1">
+    <>
       <span className="flex items-center gap-1.5 pr-1">
         <SideBadge color={color} />
         <span className="text-[0.78rem] font-medium">{SIDE_NAMES[color]}</span>
@@ -805,7 +812,10 @@ function SideSetup({
           onValueChange={(value) => onChange({ ...profile, strength_key: value })}
           disabled={locked}
         >
-          <SelectTrigger size="sm" aria-label={`Força das ${side}`}>
+          {/* `SelectTrigger` nasce com `w-fit` e `whitespace-nowrap`: sem
+              `w-full min-w-0` ele mede pelo texto e transborda a trilha da
+              grade por cima do vizinho. */}
+          <SelectTrigger size="sm" className="w-full min-w-0" aria-label={`Força das ${side}`}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -817,14 +827,14 @@ function SideSetup({
           </SelectContent>
         </Select>
       ) : (
-        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-7 w-full" />
       )}
       <Select
         value={profile.policy}
         onValueChange={(value) => onChange({ ...profile, policy: value as MatchPolicy })}
         disabled={locked}
       >
-        <SelectTrigger size="sm" aria-label={`Política das ${side}`}>
+        <SelectTrigger size="sm" className="w-full min-w-0" aria-label={`Política das ${side}`}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -832,7 +842,7 @@ function SideSetup({
           <SelectItem value="normal">normal</SelectItem>
         </SelectContent>
       </Select>
-    </div>
+    </>
   )
 }
 
