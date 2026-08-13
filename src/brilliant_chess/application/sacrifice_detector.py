@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from brilliant_chess.domain.material import DEFAULT_MATERIAL_VALUES
+from brilliant_chess.domain.material import MaterialValues
 from brilliant_chess.domain.models import Position
 from brilliant_chess.domain.rule_set import SacrificeConfidenceWeights
 from brilliant_chess.domain.sacrifice import (
@@ -21,6 +21,7 @@ def detect_destination_offer(
     position: Position,
     candidate_move: str,
     *,
+    material_values: MaterialValues,
     confidence_weights: SacrificeConfidenceWeights | None = None,
 ) -> SacrificeEvidence:
     """Mede se a candidata deixa uma peca nao-peao capturavel no destino."""
@@ -42,7 +43,7 @@ def detect_destination_offer(
         kind=SacrificeKind.DESTINATION_OFFER,
         offered_piece_square=destination,
         offered_piece_type=offered.piece_type,
-        nominal_value=DEFAULT_MATERIAL_VALUES.value_of(offered.piece_type),
+        nominal_value=material_values.value_of(offered.piece_type),
         acceptance_moves=acceptances,
         confidence=sacrifice_confidence(signals, weights),
         reasons=reasons_for(signals),

@@ -12,7 +12,7 @@ from brilliant_chess.application.analyze_position import (
 from brilliant_chess.application.sacrifice_detector import detect_destination_offer
 from brilliant_chess.domain.errors import EngineError
 from brilliant_chess.domain.expected_points import expected_points_loss
-from brilliant_chess.domain.gates import GateInputs, evaluate_gates
+from brilliant_chess.domain.gates import GateInputs, GateResult, evaluate_gates
 from brilliant_chess.domain.material import material_delta
 from brilliant_chess.domain.models import AnalysisBudget, Move, MoveEvaluation, Position
 from brilliant_chess.domain.rule_set import RuleSet
@@ -23,8 +23,12 @@ from brilliant_chess.domain.sacrifice import (
     sacrifice_confidence,
 )
 from brilliant_chess.domain.scoring import BrilliantDecision, ScoringInputs, decide
+from brilliant_chess.domain.values import GateId, GateStatus
 from brilliant_chess.ports.board import BoardService
 from brilliant_chess.ports.engine import ChessEngine
+
+_OPPONENT_REPLY_INDEX = 1
+_PV_WITH_REPLY_LENGTH = 2
 
 
 @dataclass(frozen=True)
@@ -119,7 +123,11 @@ def _audit_candidate(context: _AuditContext, candidate: Candidate) -> CandidateA
     move = board.normalize_move(position, candidate.move_uci)
     after = board.view(position.fen, (move.uci,))
     sacrifice = detect_destination_offer(
-        board, position, move.uci, confidence_weights=rules.sacrifice.confidence_weights
+        board,
+        position,
+        move.uci,
+        material_values=rules.material_values,
+        confidence_weights=rules.sacrifice.confidence_weights,
     )
     defense = _first(engine, after.position, budget.best_defense)
     best_defense_uci = None if defense is None else defense.move_uci
@@ -132,7 +140,8 @@ def _audit_candidate(context: _AuditContext, candidate: Candidate) -> CandidateA
             candidate.expected_points_after, defender_points_from_mover_pov
         ).value
         depends_on_opponent_error = (
-            len(candidate.pv_uci) > 1 and defense.move_uci != candidate.pv_uci[1]
+            len(candidate.pv_uci) < _PV_WITH_REPLY_LENGTH
+            or defense.move_uci != candidate.pv_uci[_OPPONENT_REPLY_INDEX]
         )
         if defense.move_uci in sacrifice.acceptance_moves:
             accepted = board.view(after.position.fen, (defense.move_uci,))
@@ -193,11 +202,34 @@ def _audit_candidate(context: _AuditContext, candidate: Candidate) -> CandidateA
         pv_overlap_plies=overlap,
         sacrifice_persisted=sacrifice.signals.persists_under_deeper_search,
     )
+    gates = _strict_gates(inputs, rules, has_stability_evidence=stable is not None)
     return CandidateAudit(
         candidate=candidate,
-        decision=decide(evaluate_gates(inputs, rules), scoring, rules),
+        decision=decide(gates, scoring, rules),
         best_defense_uci=best_defense_uci,
         stability_depth=None if stable is None else stable.depth,
+    )
+
+
+def _strict_gates(
+    inputs: GateInputs,
+    rules: RuleSet,
+    *,
+    has_stability_evidence: bool,
+) -> tuple[GateResult, ...]:
+    gates = evaluate_gates(inputs, rules)
+    if has_stability_evidence:
+        return gates
+    return tuple(
+        replace(
+            gate,
+            status=GateStatus.INDETERMINATE,
+            measured_value=None,
+            explanation="Evidencia de estabilidade obrigatoria ausente",
+        )
+        if gate.gate_id is GateId.STABILITY
+        else gate
+        for gate in gates
     )
 
 

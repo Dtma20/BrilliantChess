@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import replace
-
 from brilliant_chess.adapters.board.service import PythonChessBoardService
+from brilliant_chess.application import choose_brilliant_move as selector
+from brilliant_chess.application.analyze_position import Candidate, PositionAnalysis
 from brilliant_chess.application.choose_brilliant_move import (
+    CandidateAudit,
     StrictSearchBudget,
     choose_brilliant_move,
 )
-from brilliant_chess.domain.models import AnalysisBudget, Position
+from brilliant_chess.domain.models import AnalysisBudget, EngineIdentity, Position
+from brilliant_chess.domain.sacrifice import NO_SACRIFICE
+from brilliant_chess.domain.scoring import BrilliantDecision, ScoreBreakdown
 from brilliant_chess.domain.values import Color, GateId, GateStatus
 from tests.fakes.scripted_engine import ScriptedEngine, ScriptKey, evaluation
 
@@ -29,16 +32,21 @@ def budget(*, stability: AnalysisBudget | None = STABILITY) -> StrictSearchBudge
     )
 
 
-def engine_for(*, best_defense: bool = True, stability: bool = True) -> ScriptedEngine:
+def engine_for(
+    *,
+    best_defense: bool = True,
+    stability: bool = True,
+    candidate_pv: tuple[str, ...] = ("h5h7", "h8h7"),
+) -> ScriptedEngine:
     board = PythonChessBoardService()
     position = Position.from_fen(POSITION_FEN)
     after = board.position_after(POSITION_FEN, ("h5h7",))
     script = {
         ScriptKey(position.fen, (), DISCOVERY.nodes): (
-            evaluation("h5h7", Color.WHITE, centipawns=50, pv=("h5h7", "h8h7")),
+            evaluation("h5h7", Color.WHITE, centipawns=50, pv=candidate_pv),
         ),
         ScriptKey(position.fen, ("h5h7",), CONFIRMATION.nodes): (
-            evaluation("h5h7", Color.WHITE, centipawns=50, pv=("h5h7", "h8h7")),
+            evaluation("h5h7", Color.WHITE, centipawns=50, pv=candidate_pv),
         ),
     }
     if best_defense:
@@ -80,16 +88,12 @@ def test_missing_best_defense_keeps_candidate_but_rejects_it(rules):
     assert soundness.status is GateStatus.INDETERMINATE
 
 
-def test_missing_stability_evidence_is_conservative_near_a_threshold(rules):
-    near_rules = replace(
-        rules,
-        prior_position=replace(rules.prior_position, max_expected_points_before=0.57),
-    )
+def test_missing_stability_evidence_is_indeterminate_even_far_from_a_threshold(rules):
     choice = choose_brilliant_move(
         engine_for(stability=False),
         PythonChessBoardService(),
         Position.from_fen(POSITION_FEN),
-        near_rules,
+        rules,
         budget(stability=None),
     )
 
@@ -100,33 +104,78 @@ def test_missing_stability_evidence_is_conservative_near_a_threshold(rules):
     assert stability.status is GateStatus.INDETERMINATE
 
 
-def test_eligible_audits_are_sorted_by_score_then_loss_then_uci(rules):
-    first = replace(engine_for(), script={})
-    board = PythonChessBoardService()
-    position = Position.from_fen(POSITION_FEN)
-    after = board.position_after(POSITION_FEN, ("h5h7",))
-    first.script.update(
-        {
-            ScriptKey(position.fen, (), DISCOVERY.nodes): (
-                evaluation("h5h7", Color.WHITE, centipawns=50, pv=("h5h7", "h8h7")),
-                evaluation("h5g6", Color.WHITE, centipawns=50, pv=("h5g6",)),
-            ),
-            ScriptKey(position.fen, ("h5h7",), CONFIRMATION.nodes): (
-                evaluation("h5h7", Color.WHITE, centipawns=50, pv=("h5h7", "h8h7")),
-            ),
-            ScriptKey(position.fen, ("h5g6",), CONFIRMATION.nodes): (
-                evaluation("h5g6", Color.WHITE, centipawns=50, pv=("h5g6",)),
-            ),
-            ScriptKey(after.fen, (), BEST_DEFENSE.nodes): (
-                evaluation("h8h7", Color.BLACK, centipawns=-40, pv=("h8h7",)),
-            ),
-            ScriptKey(position.fen, ("h5h7",), STABILITY.nodes): (
-                evaluation("h5h7", Color.WHITE, centipawns=49, pv=("h5h7", "h8h7")),
-            ),
-        }
-    )
+def test_missing_candidate_pv_reply_is_not_proof_of_soundness(rules):
     choice = choose_brilliant_move(
-        first, board, position, rules, replace(budget(), multipv=2, max_candidates=2)
+        engine_for(candidate_pv=("h5h7",)),
+        PythonChessBoardService(),
+        Position.from_fen(POSITION_FEN),
+        rules,
+        budget(),
     )
 
-    assert [audit.candidate.move_uci for audit in choice.candidates] == ["h5h7", "h5g6"]
+    assert choice.move is None
+    soundness = next(
+        gate for gate in choice.candidates[0].decision.gates if gate.gate_id is GateId.SOUNDNESS
+    )
+    assert soundness.status is GateStatus.FAILED
+
+
+def test_eligible_audits_break_a_full_tie_by_uci(rules, monkeypatch):
+    position = Position.from_fen(POSITION_FEN)
+    candidates = (
+        _candidate("b1b2"),
+        _candidate("a1a2"),
+    )
+    analysis = PositionAnalysis(
+        position=position,
+        side_to_move=Color.WHITE,
+        engine=EngineIdentity("test", "1", "0" * 64, None),
+        expected_points_before=0.5,
+        candidates=candidates,
+        warnings=(),
+    )
+    audits = {candidate.move_uci: _selectable_audit(candidate) for candidate in candidates}
+
+    def fake_analyze(*_args):
+        return analysis
+
+    def fake_audit(_context, candidate):
+        return audits[candidate.move_uci]
+
+    monkeypatch.setattr(selector, "analyze_position", fake_analyze)
+    monkeypatch.setattr(selector, "_audit_candidate", fake_audit)
+
+    choice = choose_brilliant_move(None, None, position, rules, budget())
+
+    assert [audit.candidate.move_uci for audit in choice.candidates] == ["a1a2", "b1b2"]
+    assert choice.move is not None
+    assert choice.move.uci == "a1a2"
+
+
+def _candidate(move_uci: str) -> Candidate:
+    return Candidate(
+        move_uci=move_uci,
+        move_san=move_uci,
+        rank=1,
+        expected_points_after=0.5,
+        expected_points_loss=0.01,
+        centipawns=0,
+        mate_in=None,
+        depth=20,
+        nodes=100,
+        pv_uci=(move_uci,),
+        pv_san=(move_uci,),
+    )
+
+
+def _selectable_audit(candidate: Candidate) -> CandidateAudit:
+    decision = BrilliantDecision(
+        is_brilliant=True,
+        selectable=True,
+        score=50.0,
+        gates=(),
+        sacrifice=NO_SACRIFICE,
+        breakdown=ScoreBreakdown(10.0, 10.0, 10.0, 10.0, 10.0),
+        rule_set_version="strict_v1",
+    )
+    return CandidateAudit(candidate, decision, best_defense_uci=None, stability_depth=20)
