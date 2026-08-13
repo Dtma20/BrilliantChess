@@ -34,3 +34,9 @@ def test_store_new_id_is_usable():
     match_id = store.new_id()
     assert isinstance(match_id, str)
     assert len(match_id) == 12
+
+
+@pytest.mark.parametrize("capacity", [0, -1, 17])
+def test_store_rejects_capacity_outside_supported_bounds(capacity):
+    with pytest.raises(DomainError):
+        MatchStore(max_matches=capacity)

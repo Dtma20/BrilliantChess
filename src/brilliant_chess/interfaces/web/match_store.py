@@ -14,6 +14,8 @@ MAX_MATCHES = 16
 
 class MatchStore:
     def __init__(self, max_matches: int = MAX_MATCHES) -> None:
+        if not 1 <= max_matches <= MAX_MATCHES:
+            raise DomainError(f"max_matches deve estar entre 1 e {MAX_MATCHES}")
         self._matches: OrderedDict[str, MatchState] = OrderedDict()
         self._lock = threading.Lock()
         self._max_matches = max_matches
