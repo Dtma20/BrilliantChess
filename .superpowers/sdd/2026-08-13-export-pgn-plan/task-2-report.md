@@ -25,3 +25,9 @@ Implemented the local HTTP PGN export route and focused API coverage.
 - Local-only behavior; no third-party live-game integration or external calls added.
 - The repository currently presents its project files as untracked in Git; only the two requested implementation/test files and this report were staged for the commit.
 - Pytest emits the existing Starlette `httpx` deprecation warning; it does not affect test results and was not changed because dependency changes are out of scope.
+
+## Round 1 fix
+
+- Added the missing `GET /api/game/naoexiste/pgn` regression test, asserting HTTP 400.
+- The existing endpoint implementation was unchanged; the regression test passed without exposing an implementation issue.
+- Verification: `uv run pytest tests/unit/test_web_api.py -k pgn -v` — 4 passed; Ruff check and format checks passed; `git diff --check` passed.

@@ -114,6 +114,12 @@ def test_game_pgn_download_returns_attachment(client):
     assert '[Result "*"]' in response.text
 
 
+def test_game_pgn_download_reports_unknown_game(client):
+    response = client.get("/api/game/naoexiste/pgn")
+
+    assert response.status_code == 400
+
+
 def test_game_pgn_download_serializes_checkmate(client):
     state = save_game(
         client,
