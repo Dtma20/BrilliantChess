@@ -10,6 +10,11 @@ medidos, limiares, portoes aprovados e reprovados, linhas principais e versoes.
 
 ## Comandos
 
+Atalhos no `Makefile`: `make` lista tudo, `make install` prepara o ambiente,
+`make run` constroi a interface e sobe o servidor, `make dev` roda Vite e API
+lado a lado, `make check` passa lint, tipos e testes dos dois lados. Os comandos
+diretos continuam valendo.
+
 ```bash
 uv sync
 ```
