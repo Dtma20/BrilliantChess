@@ -41,7 +41,7 @@ export function SelectionMark({
 export function SelectionLegend() {
   return (
     <ul className="m-0 grid list-none gap-1.5 p-0">
-      {(["strict_v1", "fallback", "normal"] as SelectionKind[]).map((kind) => (
+      {(["strict_v1", "near_brilliant", "fallback", "normal"] as SelectionKind[]).map((kind) => (
         <li key={kind} className="flex items-baseline gap-2.5 text-[0.78rem] text-ink-3">
           <SelectionMark kind={kind} className="w-4 shrink-0 text-center" />
           <span>

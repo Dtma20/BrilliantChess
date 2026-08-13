@@ -19,7 +19,7 @@ export type GameStatus =
 
 export type MatchPolicy = "normal" | "strict_v1"
 
-export type SelectionKind = "normal" | "strict_v1" | "fallback"
+export type SelectionKind = "normal" | "strict_v1" | "near_brilliant" | "fallback"
 
 export type GateStatus = "passed" | "failed" | "indeterminate"
 

@@ -56,14 +56,15 @@ describe("GateRail", () => {
 })
 
 describe("SelectionLegend", () => {
-  it("explains the three marks in words", () => {
+  it("explains the four marks in words", () => {
     render(<SelectionLegend />)
     const items = screen.getAllByRole("listitem")
 
-    expect(items).toHaveLength(3)
+    expect(items).toHaveLength(4)
     expect(items[0]).toHaveTextContent("strict_v1")
-    expect(items[1]).toHaveTextContent("Nenhuma candidata passou")
-    expect(items[2]).toHaveTextContent("sem nenhum critério de brilhantismo")
+    expect(items[1]).toHaveTextContent("near_brilliant")
+    expect(items[2]).toHaveTextContent("Nenhuma candidata passou")
+    expect(items[3]).toHaveTextContent("sem nenhum critério de brilhantismo")
   })
 })
 

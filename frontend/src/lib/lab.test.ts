@@ -17,6 +17,10 @@ describe("GATES", () => {
 })
 
 describe("SELECTION_META", () => {
+  it("describes the safe near-brilliant selection returned by the API", () => {
+    expect(SELECTION_META).toHaveProperty("near_brilliant")
+  })
+
   it("gives every selection a distinct mark, so colour is never the only cue", () => {
     const marks = Object.values(SELECTION_META).map((meta) => meta.mark)
     expect(new Set(marks).size).toBe(marks.length)

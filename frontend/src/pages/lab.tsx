@@ -34,7 +34,7 @@ import { cn } from "@/lib/utils"
 
 type DeckState = "idle" | "thinking" | "paused" | "review" | "done" | "capped" | "error"
 
-const SELECTION_ORDER: SelectionKind[] = ["strict_v1", "fallback", "normal"]
+const SELECTION_ORDER: SelectionKind[] = ["strict_v1", "near_brilliant", "fallback", "normal"]
 
 export function LabPage() {
   const [settings, setSettings] = useState<LabSettings | null>(null)
@@ -490,6 +490,14 @@ function Verdict({ match, index }: { match: Match; index: number }) {
       <p className="m-0 mb-2 text-[0.88rem] text-ink-2">
         <strong className="font-semibold text-foreground">{move.san}</strong> passou pelos sete
         portões obrigatórios e foi a candidata elegível de maior pontuação.
+      </p>
+    )
+  }
+  if (move.selection === "near_brilliant") {
+    return (
+      <p className="m-0 mb-2 text-[0.88rem] text-ink-2">
+        <strong className="font-semibold text-foreground">{move.san}</strong> foi a candidata
+        auditada mais próxima de brilhante: segura, mas sem aprovação nos sete portões.
       </p>
     )
   }

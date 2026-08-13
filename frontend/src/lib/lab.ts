@@ -22,6 +22,13 @@ export const SELECTION_META: Record<SelectionKind, SelectionMeta> = {
     short: "aprovada nos sete portões",
     description: "Candidata aprovada nos sete portões, com auditoria completa.",
   },
+  near_brilliant: {
+    mark: "◈",
+    label: "near_brilliant",
+    short: "segura, mas não plenamente brilhante",
+    description:
+      "Candidata auditada e segura que não passou todos os critérios de brilhantismo.",
+  },
   fallback: {
     mark: "◇",
     label: "fallback",
