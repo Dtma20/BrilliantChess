@@ -57,15 +57,33 @@
 
 ```python
 def test_match_records_one_legal_ply_with_audit(board):
-    state = start_match("m1", STARTING_FEN, MatchProfile("maximo", MatchPolicy.STRICT_V1), MatchProfile("iniciante", MatchPolicy.NORMAL), max_plies=200)
+    state = start_match(
+        "m1",
+        STARTING_FEN,
+        MatchProfile("maximo", MatchPolicy.STRICT_V1),
+        MatchProfile("iniciante", MatchPolicy.NORMAL),
+        max_plies=200,
+    )
     moved = record_move(board, state, Move("e2e4"), SelectionKind.STRICT_V1, decision=None)
     assert moved.moves_uci == ("e2e4",)
     assert moved.moves_san == ("e4",)
     assert moved.current_fen == board.view(STARTING_FEN, ("e2e4",)).position.fen
     assert moved.moves[0].selection is SelectionKind.STRICT_V1
 
+
 def test_two_hundredth_ply_finishes_as_experimental_draw(board):
-    state = replace(start_match("m2", STARTING_FEN, MatchProfile("maximo", MatchPolicy.NORMAL), MatchProfile("iniciante", MatchPolicy.NORMAL), max_plies=2), moves_uci=("e2e4",), moves_san=("e4",), current_fen=board.view(STARTING_FEN, ("e2e4",)).position.fen)
+    state = replace(
+        start_match(
+            "m2",
+            STARTING_FEN,
+            MatchProfile("maximo", MatchPolicy.NORMAL),
+            MatchProfile("iniciante", MatchPolicy.NORMAL),
+            max_plies=2,
+        ),
+        moves_uci=("e2e4",),
+        moves_san=("e4",),
+        current_fen=board.view(STARTING_FEN, ("e2e4",)).position.fen,
+    )
     capped = record_move(board, state, Move("e7e5"), SelectionKind.NORMAL, decision=None)
     assert capped.is_finished(board) is True
     assert result_text(board, capped) == "Empate por limite experimental (100 lances)"
@@ -86,15 +104,18 @@ class MatchPolicy(StrEnum):
     NORMAL = "normal"
     STRICT_V1 = "strict_v1"
 
+
 class SelectionKind(StrEnum):
     NORMAL = "normal"
     STRICT_V1 = "strict_v1"
     FALLBACK = "fallback"
 
+
 @dataclass(frozen=True)
 class MatchProfile:
     strength_key: str
     policy: MatchPolicy
+
 
 @dataclass(frozen=True)
 class MatchMove:
@@ -103,6 +124,7 @@ class MatchMove:
     san: str
     selection: SelectionKind
     decision: BrilliantDecision | None
+
 
 @dataclass(frozen=True)
 class MatchState:
@@ -155,18 +177,31 @@ def test_destination_detector_requires_a_non_pawn_piece_capturable_on_its_square
     assert evidence.offered_piece_square == "h7"
     assert evidence.signals.legal_capture_available is True
 
-def test_selector_returns_only_a_candidate_with_all_seven_passed_gates(board, scripted_engine, rules):
-    choice = choose_brilliant_move(scripted_engine, board, Position.from_fen(OFFER_FEN), rules, TEST_BUDGET)
+
+def test_selector_returns_only_a_candidate_with_all_seven_passed_gates(
+    board, scripted_engine, rules
+):
+    choice = choose_brilliant_move(
+        scripted_engine, board, Position.from_fen(OFFER_FEN), rules, TEST_BUDGET
+    )
     assert choice.move == Move("h2h7")
     assert choice.selected.audit.decision.is_brilliant is True
     assert all(gate.passed for gate in choice.selected.audit.decision.gates)
 
+
 def test_selector_breaks_score_tie_by_ep_loss_then_uci(board, scripted_engine, rules):
-    choice = choose_brilliant_move(scripted_engine, board, Position.from_fen(TIE_FEN), rules, TEST_BUDGET)
+    choice = choose_brilliant_move(
+        scripted_engine, board, Position.from_fen(TIE_FEN), rules, TEST_BUDGET
+    )
     assert choice.move.uci == "a1a2"
 
-def test_missing_best_defense_or_stability_evidence_is_not_selectable(board, scripted_engine, rules):
-    choice = choose_brilliant_move(scripted_engine, board, Position.from_fen(OFFER_FEN), rules, TEST_BUDGET)
+
+def test_missing_best_defense_or_stability_evidence_is_not_selectable(
+    board, scripted_engine, rules
+):
+    choice = choose_brilliant_move(
+        scripted_engine, board, Position.from_fen(OFFER_FEN), rules, TEST_BUDGET
+    )
     assert choice.move is None
     assert GateStatus.INDETERMINATE in {g.status for g in choice.candidates[0].audit.decision.gates}
 ```
@@ -189,12 +224,14 @@ class StrictSearchBudget:
     multipv: int
     max_candidates: int
 
+
 @dataclass(frozen=True)
 class CandidateAudit:
     candidate: Candidate
     decision: BrilliantDecision
     best_defense_uci: str | None
     stability_depth: int | None
+
 
 @dataclass(frozen=True)
 class BrilliantMoveChoice:
@@ -244,6 +281,7 @@ def test_lab_config_uses_fixed_node_budgets():
     assert lab.strict_budget().discovery.nodes == 80_000
     assert lab.strict_budget().stability.nodes == 400_000
 
+
 def test_pair_session_creates_two_engines_with_split_resources(settings, monkeypatch):
     pair = EnginePairSession(settings)
     assert pair.white_engine() is not pair.black_engine()
@@ -270,6 +308,7 @@ class LabModel(_Strict):
     strict_confirmation_nodes: int = Field(default=200_000, gt=0)
     strict_best_defense_nodes: int = Field(default=200_000, gt=0)
     strict_stability_nodes: int = Field(default=400_000, gt=0)
+
 
 class WebModel(_Strict):
     lab: LabModel = LabModel()
@@ -307,18 +346,28 @@ git commit -m "feat: add paired Stockfish laboratory session"
 
 ```python
 def test_create_read_and_step_match(client):
-    created = client.post("/api/match", json={"white": {"strength_key": "maximo", "policy": "strict_v1"}, "black": {"strength_key": "iniciante", "policy": "normal"}}).json()
+    created = client.post(
+        "/api/match",
+        json={
+            "white": {"strength_key": "maximo", "policy": "strict_v1"},
+            "black": {"strength_key": "iniciante", "policy": "normal"},
+        },
+    ).json()
     stepped = client.post(f"/api/match/{created['match_id']}/step").json()
     assert len(stepped["moves_uci"]) == 1
     assert stepped["moves"][0]["color"] == "white"
     assert client.get(f"/api/match/{created['match_id']}").json()["match_id"] == created["match_id"]
 
+
 def test_strict_side_falls_back_to_its_configured_strength(client, monkeypatch):
-    monkeypatch.setattr(routes, "choose_brilliant_move", lambda *args: BrilliantMoveChoice(None, None, ()))
+    monkeypatch.setattr(
+        routes, "choose_brilliant_move", lambda *args: BrilliantMoveChoice(None, None, ())
+    )
     match = create_strict_white_match(client)
     result = client.post(f"/api/match/{match['match_id']}/step").json()
     assert result["moves"][0]["selection"] == "fallback"
     assert client.app.state.engine_pair_session.white.calls[0][1] == "maximo"
+
 
 def test_capped_match_refuses_one_more_step(client):
     match = create_match_with_max_plies(client, max_plies=1)
@@ -339,25 +388,63 @@ class MatchProfileIn(_Model):
     strength_key: str = "clube"
     policy: MatchPolicy = MatchPolicy.NORMAL
 
+
 class NewMatchIn(_Model):
     white: MatchProfileIn = MatchProfileIn(strength_key="maximo", policy=MatchPolicy.STRICT_V1)
     black: MatchProfileIn = MatchProfileIn(strength_key="iniciante", policy=MatchPolicy.NORMAL)
     initial_fen: str | None = None
 
+
 @router.post("/match/{match_id}/step")
-def step_match(match_id: str, request: Request, board: BoardDep, store: MatchStoreDep, pair: PairSessionDep) -> MatchOut:
+def step_match(
+    match_id: str, request: Request, board: BoardDep, store: MatchStoreDep, pair: PairSessionDep
+) -> MatchOut:
     state = store.get(match_id)
     view = play_match.current_view(board, state)
     profile, engine = _profile_and_engine(state, view.position.side_to_move, pair)
     rules = request.app.state.container.rules
     lab = request.app.state.container.settings.web.lab
-    choice = choose_brilliant_move(engine, board, view.position, rules, lab.strict_budget()) if profile.policy is MatchPolicy.STRICT_V1 else None
-    move = choice.move if choice and choice.move else engine.play_move(view.position, strength_by_key(profile.strength_key))
-    selection = SelectionKind.STRICT_V1 if choice and choice.move else (SelectionKind.FALLBACK if profile.policy is MatchPolicy.STRICT_V1 else SelectionKind.NORMAL)
-    return match_out(board, store.save(record_move(board, state, move, selection, choice.selected.decision if choice and choice.selected else None)))
+    choice = (
+        choose_brilliant_move(engine, board, view.position, rules, lab.strict_budget())
+        if profile.policy is MatchPolicy.STRICT_V1
+        else None
+    )
+    move = (
+        choice.move
+        if choice and choice.move
+        else engine.play_move(view.position, strength_by_key(profile.strength_key))
+    )
+    selection = (
+        SelectionKind.STRICT_V1
+        if choice and choice.move
+        else (
+            SelectionKind.FALLBACK
+            if profile.policy is MatchPolicy.STRICT_V1
+            else SelectionKind.NORMAL
+        )
+    )
+    return match_out(
+        board,
+        store.save(
+            record_move(
+                board,
+                state,
+                move,
+                selection,
+                choice.selected.decision if choice and choice.selected else None,
+            )
+        ),
+    )
 
-def _profile_and_engine(state: MatchState, color: Color, pair: EnginePairSession) -> tuple[MatchProfile, ChessEngine]:
-    return (state.white, pair.white_engine()) if color is Color.WHITE else (state.black, pair.black_engine())
+
+def _profile_and_engine(
+    state: MatchState, color: Color, pair: EnginePairSession
+) -> tuple[MatchProfile, ChessEngine]:
+    return (
+        (state.white, pair.white_engine())
+        if color is Color.WHITE
+        else (state.black, pair.black_engine())
+    )
 ```
 
 `MatchOut` must include board, both resolved strength labels/policies, `moves_uci`, `moves_san`, `moves`, `result_text`, `can_step`, and compact audit fields: selected UCI/SAN, score, rule-set version, gate ID/status/measured/threshold/explanation, reason codes, and fallback indication. The fake pair must expose named `white`/`black` `StubEngine` instances and close both. Route errors reuse `translated_errors`; an unknown match and any finished/capped step return 400.
@@ -391,11 +478,14 @@ git commit -m "feat: add engine duel match API"
 
 ```python
 def test_match_pgn_identifies_profiles_and_selection_comments(board):
-    text = build_match_pgn(state_with_strict_and_fallback_moves, initial, current, standard_fen=STARTING_FEN)
+    text = build_match_pgn(
+        state_with_strict_and_fallback_moves, initial, current, standard_fen=STARTING_FEN
+    )
     assert '[White "Stockfish (Máximo, strict_v1)"]' in text
     assert '[Black "Stockfish (Iniciante, normal)"]' in text
     assert "{policy=strict_v1 selection=strict_v1 score=87.50}" in text
     assert "{policy=strict_v1 selection=fallback reason=no_eligible_candidate}" in text
+
 
 def test_cap_uses_draw_result_and_experimental_comment(board):
     text = build_match_pgn(capped_state, initial, current, standard_fen=STARTING_FEN)
@@ -412,10 +502,22 @@ Expected: FAIL because match PGN export does not exist.
 - [ ] **Step 3: Implement match serialization without changing existing game PGN semantics**
 
 ```python
-def build_match_pgn(state: MatchState, initial: BoardView, current: BoardView, *, standard_fen: str) -> str:
-    result = "1/2-1/2" if state.is_capped else _result(current.status, current.position.side_to_move)
-    headers = [("Event", "Brilliant Chess - Laboratório de motores"), ("Site", "Localhost"), ("White", _match_player_name(state.white)), ("Black", _match_player_name(state.black)), ("Result", result)]
-    tokens = _movetext_with_comments(state.moves, initial.snapshot.fullmove_number, initial.position.side_to_move, result)
+def build_match_pgn(
+    state: MatchState, initial: BoardView, current: BoardView, *, standard_fen: str
+) -> str:
+    result = (
+        "1/2-1/2" if state.is_capped else _result(current.status, current.position.side_to_move)
+    )
+    headers = [
+        ("Event", "Brilliant Chess - Laboratório de motores"),
+        ("Site", "Localhost"),
+        ("White", _match_player_name(state.white)),
+        ("Black", _match_player_name(state.black)),
+        ("Result", result),
+    ]
+    tokens = _movetext_with_comments(
+        state.moves, initial.snapshot.fullmove_number, initial.position.side_to_move, result
+    )
     return _headers(headers) + "\n" + tokens + "\n"
 ```
 

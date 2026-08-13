@@ -47,7 +47,7 @@ function renderBoard() {
   elements.fen.value = view.fen;
   elements.moves.textContent = view.moves_san.length
     ? view.moves_san.join(" ")
-    : "Mova as pecas para explorar variantes.";
+    : "Mova as peças para explorar variantes.";
   elements.back.disabled = state.moves.length === 0;
 }
 
@@ -55,8 +55,8 @@ function renderAnalysis(result) {
   const best = result.candidates[0];
   if (!best) {
     elements.evalMain.textContent = "—";
-    elements.evalSide.textContent = result.board.status !== "in_progress" ? "posicao final" : "";
-    elements.linesBody.innerHTML = '<tr><td colspan="4" class="muted">Sem jogadas legais.</td></tr>';
+    elements.evalSide.textContent = result.board.status !== "in_progress" ? "posição final" : "";
+    elements.linesBody.innerHTML = '<tr><td colspan="4" class="muted">Sem jogadas legais nesta posição.</td></tr>';
     board.setArrows([]);
     return;
   }
@@ -67,7 +67,7 @@ function renderAnalysis(result) {
   elements.engineInfo.textContent =
     `${result.engine_name} ${result.engine_version}` +
     (result.nnue_name ? ` · ${result.nnue_name}` : "") +
-    ` · ${best.nodes.toLocaleString("pt-BR")} nos · profundidade ${best.depth}`;
+    ` · ${best.nodes.toLocaleString("pt-BR")} nós · profundidade ${best.depth}`;
 
   elements.linesBody.replaceChildren(
     ...result.candidates.map((candidate) => {
@@ -117,7 +117,7 @@ async function runAnalysis() {
     renderAnalysis(result);
   } catch (error) {
     showError(error.message);
-    elements.engineInfo.textContent = "Analise indisponivel.";
+    elements.engineInfo.textContent = "Análise indisponível.";
   } finally {
     state.analyzing = false;
     elements.analyze.disabled = false;

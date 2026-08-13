@@ -47,6 +47,7 @@ from brilliant_chess.interfaces.web.schemas import (
     BoardOut,
     CandidateAuditOut,
     GameOut,
+    LabOut,
     MatchMoveOut,
     MatchOut,
     MatchProfileOut,
@@ -64,7 +65,7 @@ from brilliant_chess.ports.engine import ChessEngine, PlayableEngine
 router = APIRouter(prefix="/api")
 
 #: Cor por rank da candidata. Verde e a melhor, como em tabuleiros conhecidos.
-ARROW_COLORS = ("#3fb950", "#4c8dff", "#d29922", "#8b949e")
+ARROW_COLORS = ("#7fa96a", "#c9a227", "#949b8a", "#7f8579")
 
 _BAD_REQUEST = (InvalidFenError, InvalidMoveError, IllegalMoveError, DomainError)
 
@@ -129,6 +130,17 @@ def strengths() -> list[StrengthOut]:
     return [
         StrengthOut(key=level.key, label=level.label, elo=level.elo) for level in STRENGTH_LEVELS
     ]
+
+
+@router.get("/lab")
+def lab_settings(request: Request) -> LabOut:
+    """Limite experimental e cadencia do autoplay, que roda no navegador."""
+    lab = request.app.state.container.settings.web.lab
+    return LabOut(
+        max_fullmoves=lab.max_fullmoves,
+        max_plies=lab.max_fullmoves * 2,
+        autoplay_delay_ms=lab.autoplay_delay_ms,
+    )
 
 
 @router.post("/game", status_code=status.HTTP_201_CREATED)
@@ -369,6 +381,7 @@ def match_out(board: PythonChessBoardService, state: MatchState) -> MatchOut:
     view = play_match.current_view(board, state)
     return MatchOut(
         match_id=state.match_id,
+        initial_fen=state.initial_fen,
         white=_match_profile_out(state.white),
         black=_match_profile_out(state.black),
         board=board_out(view),

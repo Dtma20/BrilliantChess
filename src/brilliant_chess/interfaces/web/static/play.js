@@ -16,10 +16,14 @@ const elements = {
 let game = null;
 let busy = false;
 
+const STARTPOS = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
 const board = createBoard(document.getElementById("board"), {
   orientation: "white",
   onMove: (uci) => submitMove(uci),
 });
+// Tabuleiro vazio parece quebrado: mostra a posicao inicial ate a partida comecar.
+board.setPosition(STARTPOS, {});
 
 function showError(message) {
   elements.error.textContent = message || "";
@@ -51,7 +55,7 @@ function render() {
   if (finished) {
     elements.status.textContent = game.result_text;
   } else if (busy) {
-    elements.status.innerHTML = '<span class="spinner"></span> Motor pensando...';
+    elements.status.innerHTML = '<span class="spinner"></span> Motor pensando…';
   } else {
     const turn = view.side_to_move === game.human_color ? "Sua vez" : "Vez do motor";
     elements.status.textContent = `${turn} — lance ${view.move_number} — ${game.strength.label}`;
@@ -61,7 +65,7 @@ function render() {
 async function submitMove(uci) {
   if (!game || busy) return;
   setBusy(true);
-  elements.status.innerHTML = '<span class="spinner"></span> Motor pensando...';
+  elements.status.innerHTML = '<span class="spinner"></span> Motor pensando…';
   try {
     game = await api.move(game.game_id, uci);
     showError("");

@@ -8,43 +8,45 @@
 </head>
 <body>
 <header class="top">
-  <h1>Brilliant Chess</h1>
-  <nav>
-    <a href="/">Inicio</a>
+  <a class="brand" href="/">Brilliant Chess <span>· estudo local</span></a>
+  <nav aria-label="Seções">
+    <a href="/">Início</a>
     <a href="/jogar">Jogar</a>
-    <a href="/analise" class="active">Analise</a>
+    <a href="/analise" class="active" aria-current="page">Análise</a>
+    <a href="/laboratorio">Laboratório</a>
   </nav>
 </header>
 <div class="fairplay">
-  Tabuleiro de estudo offline. Consultar o motor durante uma partida ao vivo e trapaca em qualquer plataforma seria.
+  Tabuleiro de estudo offline. Consultar o motor durante uma partida ao vivo é trapaça em qualquer plataforma séria.
 </div>
 <main>
   <section>
+    <h1 class="page-title" style="margin-bottom:0.9rem">Tabuleiro de análise</h1>
     <div class="board-wrap"><div id="board"></div></div>
     <div class="panel" style="margin-top:1rem">
-      <h2>Posicao</h2>
+      <h2>Posição</h2>
       <div class="row">
-        <input type="text" id="fen" spellcheck="false" placeholder="Cole uma FEN" />
+        <input type="text" id="fen" spellcheck="false" placeholder="Cole uma FEN" aria-label="FEN da posição" />
       </div>
       <div class="row">
         <button class="primary" id="load" type="button">Carregar FEN</button>
-        <button id="startpos" type="button">Posicao inicial</button>
+        <button id="startpos" type="button">Posição inicial</button>
         <button id="back" type="button">Voltar</button>
         <button id="flip" type="button">Girar</button>
         <button id="copy" type="button">Copiar FEN</button>
       </div>
-      <p class="error" id="error"></p>
+      <p class="error" id="error" role="alert"></p>
     </div>
   </section>
   <aside>
     <div class="panel">
-      <h2>Avaliacao</h2>
+      <h2>Avaliação</h2>
       <p class="row" style="justify-content:space-between">
         <span id="eval-main" style="font-size:1.5rem;font-weight:650">—</span>
         <span class="muted" id="eval-side"></span>
       </p>
       <div class="eval-bar"><span id="eval-bar" style="width:50%"></span></div>
-      <p class="muted" id="engine-info" style="margin-top:0.6rem">Motor nao consultado ainda.</p>
+      <p class="muted" id="engine-info" style="margin-top:0.6rem">Motor ainda não consultado.</p>
     </div>
     <div class="panel" style="margin-top:1rem">
       <h2>Melhores jogadas</h2>
@@ -60,13 +62,13 @@
       </div>
       <table class="lines">
         <thead><tr><th>#</th><th>Jogada</th><th>Aval.</th><th>Variante</th></tr></thead>
-        <tbody id="lines-body"><tr><td colspan="4" class="muted">Sem analise.</td></tr></tbody>
+        <tbody id="lines-body"><tr><td colspan="4" class="muted">Nenhuma análise ainda.</td></tr></tbody>
       </table>
       <p class="muted" id="warnings"></p>
     </div>
     <div class="panel" style="margin-top:1rem">
       <h2>Lances</h2>
-      <div class="moves" id="moves">Mova as pecas para explorar variantes.</div>
+      <div class="moves" id="moves">Mova as peças para explorar variantes.</div>
     </div>
   </aside>
 </main>

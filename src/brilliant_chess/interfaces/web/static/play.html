@@ -8,45 +8,47 @@
 </head>
 <body>
 <header class="top">
-  <h1>Brilliant Chess</h1>
-  <nav>
-    <a href="/">Inicio</a>
-    <a href="/jogar" class="active">Jogar</a>
-    <a href="/analise">Analise</a>
+  <a class="brand" href="/">Brilliant Chess <span>· estudo local</span></a>
+  <nav aria-label="Seções">
+    <a href="/">Início</a>
+    <a href="/jogar" class="active" aria-current="page">Jogar</a>
+    <a href="/analise">Análise</a>
+    <a href="/laboratorio">Laboratório</a>
   </nav>
 </header>
 <div class="fairplay">
-  Partida local de estudo. Nao use este app durante partidas ao vivo em nenhuma plataforma.
+  Partida local de estudo. Não use este app durante partidas ao vivo em nenhuma plataforma: isso é trapaça.
 </div>
 <main>
   <section>
+    <h1 class="page-title" style="margin-bottom:0.9rem">Partida contra o motor</h1>
     <div class="board-wrap"><div id="board"></div></div>
   </section>
   <aside>
     <div class="panel">
       <h2>Nova partida</h2>
       <div class="row">
-        <label for="color">Suas pecas</label>
+        <label for="color">Suas peças</label>
         <select id="color">
           <option value="white">Brancas</option>
           <option value="black">Pretas</option>
         </select>
       </div>
       <div class="row">
-        <label for="strength">Forca do motor</label>
+        <label for="strength">Força do motor</label>
         <select id="strength"></select>
       </div>
       <div class="row">
-        <button class="primary" id="new-game" type="button">Comecar</button>
+        <button class="primary" id="new-game" type="button">Começar</button>
         <button id="undo" type="button">Voltar lance</button>
         <button id="flip" type="button">Girar</button>
-        <button id="export-pgn" type="button" disabled>Exportar PGN</button>
+        <button id="export-pgn" type="button" disabled>PGN</button>
       </div>
     </div>
     <div class="panel" style="margin-top:1rem">
-      <h2>Situacao</h2>
-      <p class="status" id="status">Escolha as pecas e comece.</p>
-      <p class="error" id="error"></p>
+      <h2>Situação</h2>
+      <p class="status" id="status">Escolha as peças e comece.</p>
+      <p class="error" id="error" role="alert"></p>
       <div class="moves" id="moves"></div>
     </div>
   </aside>

@@ -22,6 +22,9 @@ export const api = {
   undo: (id) => request(`/api/game/${id}/undo`, { method: "POST" }),
   board: (body) => request("/api/board", { method: "POST", body: JSON.stringify(body) }),
   analyze: (body) => request("/api/analyze", { method: "POST", body: JSON.stringify(body) }),
+  lab: () => request("/api/lab"),
+  newMatch: (body) => request("/api/match", { method: "POST", body: JSON.stringify(body) }),
+  stepMatch: (id) => request(`/api/match/${encodeURIComponent(id)}/step`, { method: "POST" }),
 };
 
 export function formatMoveList(sanMoves) {

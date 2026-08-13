@@ -102,9 +102,19 @@ class MatchMoveOut(_Model):
     audit: CandidateAuditOut | None
 
 
+class LabOut(_Model):
+    """Parametros do laboratorio que o autoplay do navegador precisa conhecer."""
+
+    schema_version: str = API_SCHEMA_VERSION
+    max_fullmoves: int
+    max_plies: int
+    autoplay_delay_ms: int
+
+
 class MatchOut(_Model):
     schema_version: str = API_SCHEMA_VERSION
     match_id: str
+    initial_fen: str
     white: MatchProfileOut
     black: MatchProfileOut
     board: BoardOut

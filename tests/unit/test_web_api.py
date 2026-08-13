@@ -94,6 +94,7 @@ def test_create_read_and_step_match(client):
 
     assert len(stepped["moves_uci"]) == 1
     assert stepped["moves"][0]["color"] == "white"
+    assert stepped["initial_fen"] == STARTING_FEN
     assert client.get(f"/api/match/{created['match_id']}").json()["match_id"] == created["match_id"]
 
 
@@ -234,9 +235,26 @@ def test_strengths_are_listed(client):
 
 
 def test_pages_are_served(client):
-    for path in ("/", "/jogar", "/analise"):
+    for path in ("/", "/jogar", "/analise", "/laboratorio"):
         assert client.get(path).status_code == 200
-    assert client.get("/static/board.js").status_code == 200
+    for asset in ("/static/board.js", "/static/lab.js", "/static/lab.css"):
+        assert client.get(asset).status_code == 200
+
+
+def test_lab_page_keeps_the_fair_play_warning(client):
+    page = client.get("/laboratorio").content.decode("utf-8")
+
+    assert "fairplay" in page
+    assert "trapa" in page
+    assert "/static/lab.js" in page
+
+
+def test_lab_settings_expose_the_experimental_limit_and_cadence(client):
+    payload = client.get("/api/lab").json()
+
+    assert payload["max_fullmoves"] == 100
+    assert payload["max_plies"] == 200
+    assert payload["autoplay_delay_ms"] >= 50
 
 
 def test_new_game_as_white_waits_for_the_human(client):

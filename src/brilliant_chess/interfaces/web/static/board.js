@@ -1,7 +1,15 @@
 /* Tabuleiro SVG/DOM sem dependencia externa: pecas, seleção, arrasto e setas. */
 
 const FILES = "abcdefgh";
-const GLYPHS = { k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" };
+/* U+FE0E forca apresentacao de texto: em plataformas onde U+265F tem
+   apresentacao de emoji por padrao, o glifo colorido ignoraria o CSS. */
+const TEXT_PRESENTATION = "︎";
+const GLYPHS = Object.fromEntries(
+  Object.entries({ k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟" }).map(([type, glyph]) => [
+    type,
+    glyph + TEXT_PRESENTATION,
+  ]),
+);
 const SVG_NS = "http://www.w3.org/2000/svg";
 const PROMOTION_PIECES = ["q", "r", "b", "n"];
 
@@ -64,7 +72,8 @@ export function createBoard(root, options = {}) {
       const cell = squareEls.get(name);
       const file = FILES.indexOf(name[0]);
       const rank = Number(name[1]);
-      cell.className = `square ${(file + rank) % 2 === 0 ? "dark" : "light"}`;
+      // a1 e h8 sao casas escuras: soma par e clara, soma impar e escura.
+      cell.className = `square ${(file + rank) % 2 === 0 ? "light" : "dark"}`;
       squaresEl.append(cell);
     }
     decorateCoordinates();

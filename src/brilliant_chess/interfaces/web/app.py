@@ -73,4 +73,8 @@ def create_app(container: Container | None = None) -> FastAPI:
     def analysis_page() -> FileResponse:
         return FileResponse(STATIC_DIR / "analysis.html")
 
+    @app.get("/laboratorio", include_in_schema=False)
+    def lab_page() -> FileResponse:
+        return FileResponse(STATIC_DIR / "lab.html")
+
     return app
