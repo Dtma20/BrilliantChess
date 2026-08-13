@@ -27,6 +27,7 @@ BUDGET = AnalysisBudget(nodes=200_000)
 BLACK_TO_MOVE = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1"
 MATE_IN_TWO = "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1"
 BLACK_IS_LOST = "6k1/5ppp/8/8/8/8/5PPP/R5K1 b - - 0 1"
+CHECKMATE = "7k/5QQ1/8/8/8/8/8/7K b - - 0 1"
 
 
 @pytest.fixture(scope="module")
@@ -95,6 +96,12 @@ def test_illegal_root_move_is_rejected(engine):
         engine.analyze(
             Position.from_fen(STARTING_FEN), BUDGET, multipv=1, root_moves=[Move("e2e5")]
         )
+
+
+def test_terminal_position_returns_no_analysis_lines(engine):
+    """Stockfish legitimately omits a PV when the game is already over."""
+    results = engine.analyze(Position.from_fen(CHECKMATE), BUDGET, multipv=1)
+    assert results == ()
 
 
 def test_principal_variation_is_legal_and_has_san(engine):

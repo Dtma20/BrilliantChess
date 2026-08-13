@@ -114,6 +114,8 @@ class StockfishEngine:
         root_moves: Sequence[Move] | None = None,
     ) -> Sequence[MoveEvaluation]:
         board = _board_from(position)
+        if board.is_game_over():
+            return ()
         mover = COLOR_FROM_CHESS[board.turn]
         limit = _limit_from(budget)
         moves = _root_moves(board, root_moves)
