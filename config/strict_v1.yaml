@@ -1,0 +1,88 @@
+# Perfil padrao de pesquisa deste projeto.
+#
+# Estes limiares sao hipoteses de engenharia para iniciar a calibracao.
+# NAO sao os limiares proprietarios do Chess.com e nao devem ser apresentados
+# como tal. Ver docs/calibration.md.
+
+rules:
+  id: strict_v1
+  rating_profile: strict
+
+  quality:
+    max_expected_points_loss: 0.015
+    require_top_n: 3
+
+  resulting_position:
+    min_expected_points_after: 0.45
+
+  prior_position:
+    max_expected_points_before: 0.95
+
+  sacrifice:
+    min_nominal_value: 2.75
+    min_confidence: 0.70
+    acceptance_search_plies: 4
+    compensation_horizon_plies: 10
+    confidence_weights:
+      legal_capture_available: 0.35
+      material_deficit_in_acceptance: 0.20
+      engine_considers_acceptance: 0.15
+      tactical_mechanism_in_pv: 0.15
+      persists_under_deeper_search: 0.15
+
+  robustness:
+    max_ep_drift_on_deeper_search: 0.02
+    min_pv_overlap_plies: 2
+    # Margem unica usada tanto por GATE_STABILITY_001 quanto pelo estagio de
+    # estabilidade. Mantida apenas aqui para nao existir em dois lugares.
+    stability_threshold_margin: 0.01
+
+  scoring:
+    quality_weight: 30
+    sacrifice_weight: 35
+    forcingness_weight: 15
+    uniqueness_weight: 10
+    robustness_weight: 10
+
+  selection:
+    safe_max_expected_points_loss: 0.03
+    uniqueness_equivalence_margin: 0.02
+
+  material_values:
+    pawn: 1.0
+    knight: 3.2
+    bishop: 3.3
+    rook: 5.0
+    queen: 9.0
+
+engine:
+  # null delega a deteccao para BRILLIANT_CHESS_STOCKFISH, STOCKFISH_PATH ou PATH.
+  binary_path: null
+  threads: 6
+  hash_mb: 1024
+  workers: 1
+  timeout_seconds: 120.0
+  discovery:
+    multipv: 12
+    nodes: 400000
+  confirmation:
+    candidates: 6
+    nodes_per_candidate: 1500000
+  stability:
+    enabled: true
+    nodes_per_candidate: 4000000
+
+# Interface web local. Sempre em loopback: e um app de estudo, nao um servico.
+web:
+  host: 127.0.0.1
+  port: 8000
+  analysis_multipv: 6
+  analysis_discovery_nodes: 300000
+  analysis_confirmation_nodes: 700000
+  max_arrows: 3
+
+storage:
+  database_path: data/brilliant_chess.sqlite3
+
+logging:
+  level: INFO

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Analise — Brilliant Chess</title>
+<link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+<header class="top">
+  <h1>Brilliant Chess</h1>
+  <nav>
+    <a href="/">Inicio</a>
+    <a href="/jogar">Jogar</a>
+    <a href="/analise" class="active">Analise</a>
+  </nav>
+</header>
+<div class="fairplay">
+  Tabuleiro de estudo offline. Consultar o motor durante uma partida ao vivo e trapaca em qualquer plataforma seria.
+</div>
+<main>
+  <section>
+    <div class="board-wrap"><div id="board"></div></div>
+    <div class="panel" style="margin-top:1rem">
+      <h2>Posicao</h2>
+      <div class="row">
+        <input type="text" id="fen" spellcheck="false" placeholder="Cole uma FEN" />
+      </div>
+      <div class="row">
+        <button class="primary" id="load" type="button">Carregar FEN</button>
+        <button id="startpos" type="button">Posicao inicial</button>
+        <button id="back" type="button">Voltar</button>
+        <button id="flip" type="button">Girar</button>
+        <button id="copy" type="button">Copiar FEN</button>
+      </div>
+      <p class="error" id="error"></p>
+    </div>
+  </section>
+  <aside>
+    <div class="panel">
+      <h2>Avaliacao</h2>
+      <p class="row" style="justify-content:space-between">
+        <span id="eval-main" style="font-size:1.5rem;font-weight:650">—</span>
+        <span class="muted" id="eval-side"></span>
+      </p>
+      <div class="eval-bar"><span id="eval-bar" style="width:50%"></span></div>
+      <p class="muted" id="engine-info" style="margin-top:0.6rem">Motor nao consultado ainda.</p>
+    </div>
+    <div class="panel" style="margin-top:1rem">
+      <h2>Melhores jogadas</h2>
+      <div class="row" style="margin-bottom:0.6rem">
+        <label for="lines">Linhas</label>
+        <select id="lines">
+          <option>3</option>
+          <option selected>5</option>
+          <option>8</option>
+        </select>
+        <label for="auto"><input type="checkbox" id="auto" checked /> Analisar ao mover</label>
+        <button id="analyze" type="button">Analisar</button>
+      </div>
+      <table class="lines">
+        <thead><tr><th>#</th><th>Jogada</th><th>Aval.</th><th>Variante</th></tr></thead>
+        <tbody id="lines-body"><tr><td colspan="4" class="muted">Sem analise.</td></tr></tbody>
+      </table>
+      <p class="muted" id="warnings"></p>
+    </div>
+    <div class="panel" style="margin-top:1rem">
+      <h2>Lances</h2>
+      <div class="moves" id="moves">Mova as pecas para explorar variantes.</div>
+    </div>
+  </aside>
+</main>
+<script type="module" src="/static/analysis.js"></script>
+</body>
+</html>

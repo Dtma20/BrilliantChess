@@ -1,0 +1,28 @@
+# Perfil de desenvolvimento: mesmos limiares de regra, orcamento reduzido.
+# Use para iterar rapido; nunca para golden tests ou calibracao.
+
+rules:
+  id: strict_v1
+  rating_profile: strict
+
+engine:
+  binary_path: null
+  threads: 2
+  hash_mb: 256
+  workers: 1
+  timeout_seconds: 30.0
+  discovery:
+    multipv: 6
+    nodes: 80000
+  confirmation:
+    candidates: 3
+    nodes_per_candidate: 200000
+  stability:
+    enabled: false
+    nodes_per_candidate: 400000
+
+storage:
+  database_path: data/development.sqlite3
+
+logging:
+  level: DEBUG

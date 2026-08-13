@@ -1,0 +1,35 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Binarios de motor e redes NNUE nunca sao commitados
+engines/
+*.exe
+*.nnue
+
+# Artefatos locais
+data/
+*.sqlite3
+*.db
+out/
+reports/
+
+# Preferencias de ferramentas e artefatos de analise locais
+.claude/
+.superpowers/
+.hypothesis/
+graphify-out/
+.worktrees/
+
+# Configuracao local que pode conter caminhos ou credenciais
+.env
+.env.*
+!.env.example

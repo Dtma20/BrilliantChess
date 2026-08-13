@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Brilliant Chess</title>
+<link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+<header class="top">
+  <h1>Brilliant Chess</h1>
+  <nav>
+    <a href="/" class="active">Inicio</a>
+    <a href="/jogar">Jogar</a>
+    <a href="/analise">Analise</a>
+    <a href="/docs">API</a>
+  </nav>
+</header>
+<div class="fairplay">
+  Ferramenta de estudo offline. Nao use durante partidas ao vivo em nenhuma plataforma: isso e trapaca.
+  O app desenha o proprio tabuleiro, nao le tela, nao controla o mouse e nao se conecta a partida alguma.
+</div>
+<main style="grid-template-columns: 1fr">
+  <section class="cards">
+    <a class="panel card" href="/jogar">
+      <h3>Jogar contra o motor</h3>
+      <p>Partida local completa contra o Stockfish, com forca ajustavel de iniciante a maxima.</p>
+    </a>
+    <a class="panel card" href="/analise">
+      <h3>Tabuleiro de analise</h3>
+      <p>Cole uma FEN ou mova as pecas: o motor indica as melhores jogadas com setas e avaliacao.</p>
+    </a>
+  </section>
+  <section class="panel">
+    <h2>Como funciona</h2>
+    <p class="muted">
+      A busca e do Stockfish. A avaliacao e convertida em pontos esperados no intervalo de 0 a 1,
+      sempre do ponto de vista de quem esta a jogar. Cada candidata passa por descoberta com MultiPV
+      e depois por uma confirmacao individual, que e o que define o ranking mostrado nas setas.
+    </p>
+    <p class="muted">
+      A classificacao de jogadas brilhantes usa o conjunto de regras <code>strict_v1</code> deste
+      projeto e chega nas proximas entregas. Ela nao e uma reproducao do algoritmo do Chess.com.
+    </p>
+  </section>
+</main>
+</body>
+</html>
