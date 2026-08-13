@@ -51,6 +51,21 @@ describe("GATES", () => {
       "GATE_STABILITY_001",
     ])
   })
+
+  /* Estes operadores são copiados de `domain/gates.py`. Só `not_already_won`
+     compara com `<` estrito; mostrar `≤` faz "1.0000 ≤ 0.9500 reprovado"
+     parecer contradição na tela. */
+  it("shows the exact comparison each gate applies in the domain", () => {
+    expect(Object.fromEntries(GATES.map((gate) => [gate.id, gate.relation]))).toEqual({
+      GATE_LEGAL_001: null,
+      GATE_QUALITY_001: "≤",
+      GATE_SACRIFICE_001: "≥",
+      GATE_SOUNDNESS_001: "≤",
+      GATE_NOT_BAD_AFTER_001: "≥",
+      GATE_NOT_ALREADY_WON_001: "<",
+      GATE_STABILITY_001: "≤",
+    })
+  })
 })
 
 describe("SELECTION_META", () => {

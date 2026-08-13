@@ -23,6 +23,7 @@ import {
   gateWord,
   meterPositions,
   selectionMeta,
+  type GateMeta,
   type SelectionMeta,
 } from "@/lib/lab"
 import { cn } from "@/lib/utils"
@@ -151,7 +152,7 @@ function GateRow({
 }: {
   gate: Gate
   name: string
-  relation: "≤" | "≥" | null
+  relation: GateMeta["relation"]
 }) {
   const meter = meterPositions(gate.measured, gate.threshold)
   const tone = gateTone(gate.status)

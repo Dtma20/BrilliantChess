@@ -90,8 +90,12 @@ export interface GateMeta {
   id: string
   name: string
   tile: string
-  /** Direção do limiar. `null` quando o portão é booleano. */
-  relation: "≤" | "≥" | null
+  /**
+   * Comparação exata que o portão aplica em `domain/gates.py`. Não é
+   * decoração: quem lê `1.0000 ≤ 0.9500` e vê "reprovado" fica sem entender.
+   * `null` quando o portão é booleano.
+   */
+  relation: "≤" | "<" | "≥" | null
 }
 
 export const GATES: GateMeta[] = [
@@ -100,7 +104,8 @@ export const GATES: GateMeta[] = [
   { id: "GATE_SACRIFICE_001", name: "Sacrifício", tile: "S", relation: "≥" },
   { id: "GATE_SOUNDNESS_001", name: "Solidez", tile: "D", relation: "≤" },
   { id: "GATE_NOT_BAD_AFTER_001", name: "Posição depois", tile: "P", relation: "≥" },
-  { id: "GATE_NOT_ALREADY_WON_001", name: "Não era ganho", tile: "G", relation: "≤" },
+  // `gate_not_already_won` usa `<` estrito, não `<=`.
+  { id: "GATE_NOT_ALREADY_WON_001", name: "Não era ganho", tile: "G", relation: "<" },
   { id: "GATE_STABILITY_001", name: "Estabilidade", tile: "E", relation: "≤" },
 ]
 
