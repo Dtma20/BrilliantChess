@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Jogar — Brilliant Chess</title>
+<link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+<header class="top">
+  <h1>Brilliant Chess</h1>
+  <nav>
+    <a href="/">Inicio</a>
+    <a href="/jogar" class="active">Jogar</a>
+    <a href="/analise">Analise</a>
+  </nav>
+</header>
+<div class="fairplay">
+  Partida local de estudo. Nao use este app durante partidas ao vivo em nenhuma plataforma.
+</div>
+<main>
+  <section>
+    <div class="board-wrap"><div id="board"></div></div>
+  </section>
+  <aside>
+    <div class="panel">
+      <h2>Nova partida</h2>
+      <div class="row">
+        <label for="color">Suas pecas</label>
+        <select id="color">
+          <option value="white">Brancas</option>
+          <option value="black">Pretas</option>
+        </select>
+      </div>
+      <div class="row">
+        <label for="strength">Forca do motor</label>
+        <select id="strength"></select>
+      </div>
+      <div class="row">
+        <button class="primary" id="new-game" type="button">Comecar</button>
+        <button id="undo" type="button">Voltar lance</button>
+        <button id="flip" type="button">Girar</button>
+        <button id="export-pgn" type="button" disabled>Exportar PGN</button>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:1rem">
+      <h2>Situacao</h2>
+      <p class="status" id="status">Escolha as pecas e comece.</p>
+      <p class="error" id="error"></p>
+      <div class="moves" id="moves"></div>
+    </div>
+  </aside>
+</main>
+<script type="module" src="/static/play.js"></script>
+</body>
+</html>
