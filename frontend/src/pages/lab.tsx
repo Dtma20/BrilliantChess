@@ -293,11 +293,16 @@ export function LabPage() {
   }, [match])
 
   return (
-    <div className="grid gap-4 lg:mx-auto lg:w-fit lg:grid-cols-[auto_minmax(320px,392px)] lg:items-start lg:gap-5">
-      {/* A altura do tabuleiro é orçada: sobra exatamente o necessário para a
-          barra de estado acima e o placar abaixo caberem na primeira tela de um
-          notebook comum. */}
-      <section className="grid gap-1.5 lg:w-[clamp(320px,calc(100svh-16rem),620px)]">
+    /* O trilho tem largura fixa. Com uma faixa flexível ele encolhia quando o
+       conteúdo era curto, então a mesa mudava de forma ao iniciar o duelo. */
+    <div className="grid gap-4 lg:mx-auto lg:w-fit lg:grid-cols-[auto_392px] lg:items-start lg:gap-5">
+      {/* O tabuleiro é orçado por dois lados. Em altura sobra exatamente o
+          necessário para a barra de estado e o placar caberem na primeira tela
+          de um notebook. Em largura sobra o trilho, a calha e o respiro da
+          página, e o teto de 720px é o que resta do contêiner de 1180px depois do
+          respiro (1180 - 48 - 392 - 20): assim a mesa preenche a tela grande em
+          vez de flutuar pequena no meio dela, sem vazar do contêiner. */}
+      <section className="grid gap-1.5 lg:w-[clamp(320px,min(calc(100svh-16rem),calc(100vw-29rem)),720px)]">
         <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h1 className="m-0 text-[1.05rem] leading-none font-medium">Laboratório de duelo</h1>
           <p className="m-0 text-[0.8rem] text-ink-3">Dois Stockfish, um contra o outro.</p>
@@ -341,7 +346,14 @@ export function LabPage() {
           label="Tabuleiro do duelo, somente leitura"
         />
 
-        <ClockPlate match={match} busy={busy} move={move} ply={viewedPly} />
+        <ClockPlate
+          match={match}
+          setup={{ white, black }}
+          strengths={strengths}
+          busy={busy}
+          move={move}
+          ply={viewedPly}
+        />
       </section>
 
       <aside className="grid content-start overflow-hidden rounded-lg border border-border bg-card lg:sticky lg:top-4">
@@ -539,11 +551,15 @@ function Register({ title, children }: { title: string; children: React.ReactNod
  */
 function ClockPlate({
   match,
+  setup,
+  strengths,
   busy,
   move,
   ply,
 }: {
   match: Match | null
+  setup: { white: MatchProfileInput; black: MatchProfileInput }
+  strengths: Strength[] | null
   busy: boolean
   move: MatchMove | undefined
   ply: number
@@ -551,7 +567,14 @@ function ClockPlate({
   const active = match?.can_step ? match.board.side_to_move : null
   return (
     <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-1.5 rounded-md border border-border-soft bg-secondary px-2.5 py-1.5">
-      <SidePlate color="white" match={match} active={active === "white"} busy={busy} />
+      <SidePlate
+        color="white"
+        match={match}
+        setup={setup.white}
+        strengths={strengths}
+        active={active === "white"}
+        busy={busy}
+      />
       <div className="flex flex-col items-center justify-center gap-1 px-1">
         {move ? (
           <>
@@ -567,25 +590,48 @@ function ClockPlate({
           <span className="text-[0.72rem] text-ink-4">sem lances</span>
         )}
       </div>
-      <SidePlate color="black" match={match} active={active === "black"} busy={busy} align="end" />
+      <SidePlate
+        color="black"
+        match={match}
+        setup={setup.black}
+        strengths={strengths}
+        active={active === "black"}
+        busy={busy}
+        align="end"
+      />
     </div>
   )
+}
+
+/** Rótulo curto de uma força: só o nome, sem o rating entre parênteses. */
+function shortStrength(key: string, strengths: Strength[] | null): string {
+  return (strengths?.find((level) => level.key === key)?.label ?? key).split(" (")[0]
 }
 
 function SidePlate({
   color,
   match,
+  setup,
+  strengths,
   active,
   busy,
   align = "start",
 }: {
   color: Color
   match: Match | null
+  setup: MatchProfileInput
+  strengths: Strength[] | null
   active: boolean
   busy: boolean
   align?: "start" | "end"
 }) {
+  // Antes de iniciar, o placar mostra o que está configurado na mesa. Um "não
+  // iniciado" repetido nos dois lados não informa nada a quem vai começar.
   const profile = match ? (color === "white" ? match.white : match.black) : null
+  const strengthLabel = profile
+    ? profile.strength.label.split(" (")[0]
+    : shortStrength(setup.strength_key, strengths)
+  const policy = profile ? profile.policy : setup.policy
   const counts = selectionCounts((match?.moves ?? []).filter((item) => item.color === color))
   const played = counts.reduce((sum, item) => sum + item.total, 0)
   return (
@@ -610,8 +656,8 @@ function SidePlate({
           align === "end" ? "flex-row-reverse flex-wrap-reverse" : "flex-wrap",
         )}
       >
-        <span>
-          {profile ? `${profile.strength.label.split(" (")[0]} · ${profile.policy}` : "não iniciado"}
+        <span className={cn(!profile && "text-ink-4/80")}>
+          {strengthLabel} · {policy}
         </span>
         {played > 0 &&
           counts

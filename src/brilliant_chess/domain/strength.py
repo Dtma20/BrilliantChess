@@ -46,7 +46,7 @@ STRENGTH_LEVELS: Final[tuple[EngineStrength, ...]] = (
     EngineStrength(key="clube", label="Clube (~1900)", elo=1900, move_time_seconds=0.30),
     EngineStrength(key="forte", label="Forte (~2200)", elo=2200, move_time_seconds=0.40),
     EngineStrength(key="mestre", label="Mestre (~2600)", elo=2600, move_time_seconds=0.60),
-    EngineStrength(key="maximo", label="Maximo (sem limite)", elo=None, move_time_seconds=1.00),
+    EngineStrength(key="maximo", label="Máximo (sem limite)", elo=None, move_time_seconds=1.00),
 )
 
 DEFAULT_STRENGTH_KEY: Final[str] = "clube"

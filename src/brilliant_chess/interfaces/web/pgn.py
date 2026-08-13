@@ -69,8 +69,6 @@ def build_match_pgn(
 
 def _match_player_name(profile: play_match.MatchProfile) -> str:
     label = strength_by_key(profile.strength_key).label.split(" (", 1)[0]
-    if profile.strength_key == "maximo":
-        label = "Máximo"
     return f"Stockfish ({label}, {profile.policy.value})"
 
 

@@ -114,7 +114,9 @@ export function FairPlayBanner() {
         <p className="m-0 text-[0.78rem]">
           Ferramenta local de estudo. Usar durante partida ao vivo é trapaça.
         </p>
-        <CollapsibleTrigger className="group ml-auto shrink-0 rounded-sm text-[0.72rem] text-ink-3 underline decoration-destructive/40 underline-offset-2 hover:text-foreground">
+        {/* Fica ao lado da frase, não na borda oposta: em monitor largo o
+            `ml-auto` deixava o link a mais de mil pixels do texto que explica. */}
+        <CollapsibleTrigger className="group shrink-0 rounded-sm text-[0.72rem] text-ink-3 underline decoration-destructive/40 underline-offset-2 hover:text-foreground">
           <span className="group-data-[state=open]:hidden">o que o app não faz</span>
           <span className="hidden group-data-[state=open]:inline">recolher</span>
         </CollapsibleTrigger>
