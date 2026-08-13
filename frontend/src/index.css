@@ -1,0 +1,195 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Fontes empacotadas localmente: nada é buscado na rede em tempo de execução. */
+@import "@fontsource-variable/ibm-plex-sans";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/600.css";
+@import "@fontsource/ibm-plex-serif/500.css";
+@import "@fontsource/ibm-plex-serif/600.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+  Sistema visual do Brilliant Chess.
+
+  A paleta sai do mundo do produto, não de um tema pronto: o creme do papel de
+  súmula, o verde do pano da mesa de clube e o latão do relógio analógico.
+  Grafite morno como base, elevação em degraus de poucos pontos de luminância,
+  profundidade feita só de bordas de baixa opacidade.
+
+  Só existe modo escuro. É uma bancada de estudo, não um site.
+*/
+:root {
+  color-scheme: dark;
+
+  /* superfícies */
+  --background: #121311;
+  --card: #171916;
+  --popover: #242720;
+  --secondary: #1d1f1b;
+  --muted: #1d1f1b;
+  --accent: #1d1f1b;
+  --elevated: #242720;
+  --inset: #101210;
+
+  /* tinta, quatro níveis, sempre nos mesmos papéis */
+  --foreground: #e9ece4;
+  --ink-2: #b3b9ab;
+  --ink-3: #949b8a;
+  --ink-4: #7f8579;
+
+  --card-foreground: var(--foreground);
+  --popover-foreground: var(--foreground);
+  --secondary-foreground: var(--foreground);
+  --accent-foreground: var(--foreground);
+  --muted-foreground: var(--ink-3);
+
+  /* latão do relógio: identidade e ação */
+  --primary: #c9a227;
+  --primary-foreground: #1a1608;
+  --brass: #c9a227;
+  --brass-wash: rgb(201 162 39 / 0.13);
+
+  /* semânticas na mesma temperatura */
+  --baize: #7fa96a;
+  --baize-wash: rgb(127 169 106 / 0.14);
+  --destructive: #dd6a52;
+  --destructive-wash: rgb(221 106 82 / 0.12);
+
+  /* bordas: rgba sobre o branco morno, nunca hex sólido */
+  --border: rgb(233 236 228 / 0.1);
+  --border-soft: rgb(233 236 228 / 0.055);
+  --border-strong: rgb(233 236 228 / 0.18);
+  --input: rgb(233 236 228 / 0.14);
+  --ring: #c9a227;
+
+  /* tabuleiro: a única superfície clara da tela */
+  --board-light: #ebecd0;
+  --board-dark: #6f8f5c;
+  --board-last-move: rgb(201 162 39 / 0.42);
+  --board-check: rgb(221 106 82 / 0.6);
+
+  --chart-1: #7fa96a;
+  --chart-2: #c9a227;
+  --chart-3: #949b8a;
+  --chart-4: #dd6a52;
+  --chart-5: #7f8579;
+
+  --radius: 0.5rem;
+}
+
+/* A aplicação é escura por decisão de projeto; o seletor existe para que as
+   variantes `dark:` dos componentes shadcn resolvam igual. */
+.dark {
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: "IBM Plex Sans Variable", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", monospace;
+  --font-editorial: "IBM Plex Serif", Georgia, serif;
+  --font-heading: var(--font-editorial);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-4: var(--ink-4);
+  --color-elevated: var(--elevated);
+  --color-inset: var(--inset);
+  --color-border-soft: var(--border-soft);
+  --color-border-strong: var(--border-strong);
+
+  --color-brass: var(--brass);
+  --color-brass-wash: var(--brass-wash);
+  --color-baize: var(--baize);
+  --color-baize-wash: var(--baize-wash);
+  --color-destructive-wash: var(--destructive-wash);
+
+  --color-board-light: var(--board-light);
+  --color-board-dark: var(--board-dark);
+  --color-board-last-move: var(--board-last-move);
+  --color-board-check: var(--board-check);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-md: calc(var(--radius) * 0.75);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+
+  --animate-breathe: breathe 1.7s cubic-bezier(0.2, 0, 0.1, 1) infinite;
+
+  @keyframes breathe {
+    50% {
+      opacity: 0.3;
+    }
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  :focus-visible {
+    @apply outline-ring outline-2 outline-offset-2;
+  }
+
+  ::selection {
+    background: var(--brass-wash);
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-editorial tracking-tight;
+  }
+
+  code,
+  kbd {
+    @apply font-mono;
+  }
+}
+
+/* Rótulo de instrumento: as legendas de painel do laboratório. */
+@utility label-micro {
+  @apply font-sans text-[0.7rem] font-semibold uppercase tracking-[0.09em] text-ink-3;
+}
+
+/* Todo número que se compara na vertical usa a mesma largura de dígito. */
+@utility numeric {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}

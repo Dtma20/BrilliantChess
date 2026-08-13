@@ -19,7 +19,7 @@ from brilliant_chess.domain.sacrifice import NO_SACRIFICE
 from brilliant_chess.domain.scoring import BrilliantDecision, ScoreBreakdown
 from brilliant_chess.domain.values import Color
 from brilliant_chess.interfaces.web import routes
-from brilliant_chess.interfaces.web.app import create_app
+from brilliant_chess.interfaces.web.app import WEB_DIST_ENV_VAR, create_app
 from tests.fakes.stub_engine import StubPairSession, StubSession
 
 MATE_IN_ONE_FEN = "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1"
@@ -41,8 +41,7 @@ def save_game(client, initial_fen=STARTING_FEN, moves=()):
     return store.save(state)
 
 
-@pytest.fixture
-def client(tmp_path: Path) -> Iterator[TestClient]:
+def build_client(tmp_path: Path) -> Iterator[TestClient]:
     config = tmp_path / "config.yaml"
     config.write_text(
         "engine:\n  threads: 1\n  workers: 1\n"
@@ -55,6 +54,24 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
     app.state.engine_pair_session = StubPairSession()
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+    """API sem build da interface: o SPA cai na pagina de instrucoes."""
+    monkeypatch.setenv(WEB_DIST_ENV_VAR, str(tmp_path / "sem-build"))
+    yield from build_client(tmp_path)
+
+
+@pytest.fixture
+def built_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
+    """API com um build minimo da interface, so para exercitar o roteamento."""
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text('<!doctype html><div id="root"></div>', encoding="utf-8")
+    (dist / "assets" / "index.js").write_text("console.log('build')", encoding="utf-8")
+    monkeypatch.setenv(WEB_DIST_ENV_VAR, str(dist))
+    yield from build_client(tmp_path)
 
 
 def create_strict_white_match(client: TestClient) -> dict[str, object]:
@@ -234,19 +251,38 @@ def test_strengths_are_listed(client):
     assert levels[-1]["elo"] is None
 
 
-def test_pages_are_served(client):
-    for path in ("/", "/jogar", "/analise", "/laboratorio"):
-        assert client.get(path).status_code == 200
-    for asset in ("/static/board.js", "/static/lab.js", "/static/lab.css"):
-        assert client.get(asset).status_code == 200
+def test_every_navigation_route_serves_the_spa(built_client):
+    for path in ("/", "/jogar", "/analise", "/laboratorio", "/rota/inexistente"):
+        response = built_client.get(path)
+        assert response.status_code == 200
+        assert '<div id="root"></div>' in response.text
 
 
-def test_lab_page_keeps_the_fair_play_warning(client):
-    page = client.get("/laboratorio").content.decode("utf-8")
+def test_spa_assets_are_served_from_the_build(built_client):
+    response = built_client.get("/assets/index.js")
 
-    assert "fairplay" in page
-    assert "trapa" in page
-    assert "/static/lab.js" in page
+    assert response.status_code == 200
+    assert response.text == "console.log('build')"
+
+
+def test_unknown_api_route_is_not_swallowed_by_the_spa(built_client):
+    assert built_client.get("/api/nao-existe").status_code == 404
+
+
+def test_old_vanilla_assets_are_gone_and_return_404(built_client):
+    for path in ("/static/board.js", "/static/lab.js", "/static/app.css"):
+        assert built_client.get(path).status_code == 404
+
+
+def test_asset_paths_cannot_escape_the_build_directory(built_client):
+    assert built_client.get("/../pyproject.toml").status_code in {307, 404}
+
+
+def test_missing_build_explains_how_to_build_instead_of_failing(client):
+    response = client.get("/laboratorio")
+
+    assert response.status_code == 200
+    assert "npm run build" in response.text
 
 
 def test_lab_settings_expose_the_experimental_limit_and_cadence(client):

@@ -33,3 +33,6 @@ graphify-out/
 .env
 .env.*
 !.env.example
+
+# Dependencias do front
+node_modules/

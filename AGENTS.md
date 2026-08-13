@@ -38,6 +38,32 @@ uv run brilliant-chess doctor
 uv run brilliant-chess serve
 ```
 
+Interface web (React + TypeScript + Vite), a partir de `frontend/`:
+
+```bash
+npm install
+```
+
+```bash
+npm run build
+```
+
+```bash
+npm run dev
+```
+
+```bash
+npm test
+```
+
+```bash
+npm run typecheck
+```
+
+`serve` entrega o que estiver em `frontend/dist`. Sem build, ele responde com
+uma pagina explicando como gerar. Em desenvolvimento, use `npm run dev` em
+`127.0.0.1:5173`, que faz proxy de `/api` para o FastAPI.
+
 Testes de integracao com motor real: `uv run pytest -m slow` (pulam sozinhos se
 o Stockfish nao estiver instalado).
 
@@ -60,7 +86,10 @@ o Stockfish nao estiver instalado).
 | `adapters/stockfish/` | Cliente UCI, mapeamento e localizacao do binario |
 | `adapters/board/` | Regras de tabuleiro com python-chess |
 | `interfaces/cli/` | Comandos e renderizacao |
-| `interfaces/web/` | API local, sessao do motor e tabuleiro no navegador |
+| `interfaces/web/` | API local, sessao do motor e entrega do SPA |
+| `frontend/src/lib/` | Cliente tipado da API e utilidades de tabuleiro |
+| `frontend/src/components/` | Tabuleiro, shell e pecas do laboratorio |
+| `frontend/src/pages/` | Inicio, jogar, analise e laboratorio |
 | `bootstrap/` | Configuracao pydantic e montagem |
 
 ## Invariantes do dominio
@@ -110,6 +139,7 @@ Atualize, na mesma mudanca:
 - Documentacao afetada atualizada.
 - Arquivos alterados listados, riscos e proximo passo informados.
 - Nenhum segredo, caminho pessoal ou binario grande commitado.
+- `frontend/dist` e `node_modules` fora do versionamento.
 - Cobertura do dominio >= 90% e global >= 80%.
 
 ## Estado por entrega
@@ -120,5 +150,7 @@ Atualize, na mesma mudanca:
 - Entrega 3 (discovery + confirmation, EP loss): parcial — falta o estagio de
   estabilidade e o cache persistente.
 - Interface web local (jogo + analise): concluida, ver ADR 0005.
+- Laboratorio de duelo entre motores: interface concluida.
+- Migracao do front para React + Vite + Tailwind: concluida, ver ADR 0006.
 - Entrega 4 (detector de sacrificio): proxima.
 - Entregas 5 a 9: pendentes, ver especificacao do projeto.
