@@ -38,6 +38,17 @@ def test_build_pgn_has_headers_and_standard_movetext(board):
     assert pgn.endswith("\n")
 
 
+def test_build_pgn_numbers_black_moves_after_each_full_move(board):
+    moves = ("e2e4", "e7e5", "g1f3", "d7d6")
+    state = state_with_moves(board, STARTING_FEN, Color.WHITE, moves)
+    initial = board.view(STARTING_FEN, ())
+    current = board.view(STARTING_FEN, moves)
+
+    pgn = build_pgn(state, initial, current, standard_fen=STARTING_FEN)
+
+    assert "1. e4 e5 2. Nf3 d6 *" in pgn
+
+
 def test_build_pgn_uses_black_ellipsis_for_black_to_move(board):
     state = state_with_moves(board, BLACK_TO_MOVE_FEN, Color.WHITE, ("e7e5",))
     initial = board.view(BLACK_TO_MOVE_FEN, ())

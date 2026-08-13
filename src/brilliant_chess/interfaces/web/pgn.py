@@ -54,7 +54,7 @@ def _movetext(
     for san in moves:
         if side is Color.WHITE:
             tokens.append(f"{move_number}.")
-        elif not tokens or (tokens and tokens[-1].endswith("...")):
+        elif not tokens:
             tokens.append(f"{move_number}...")
         tokens.append(san)
         if side is Color.BLACK:
