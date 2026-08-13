@@ -115,9 +115,53 @@ Valores materiais padrao: peao `1.0`, cavalo `3.2`, bispo `3.3`, torre `5.0`,
 dama `9.0`. O rei nao tem valor mensuravel. Esses valores detectam concessao
 material; a correcao da jogada vem sempre do motor.
 
-Tipos previstos (`SacrificeKind`): `DESTINATION_OFFER`, `LEFT_HANGING`,
-`EXCHANGE_SACRIFICE` (obrigatorios na Entrega 4), `DECLINED_RECAPTURE` e
+Tipos previstos (`SacrificeKind`): `DESTINATION_OFFER` e `LEFT_HANGING`
+(implementados), `EXCHANGE_SACRIFICE`, `DECLINED_RECAPTURE` e
 `CLEARANCE_OR_DEFLECTION` (segunda entrega do detector).
+
+### `DESTINATION_OFFER` — oferta na casa de destino
+
+A candidata leva uma peca nao-peao para uma casa que o adversario pode capturar
+legalmente. A oferta esta **na casa de destino** do lance.
+
+### `LEFT_HANGING` — peca deixada pendurada
+
+A candidata deixa capturavel uma peca nao-peao do proprio lado que **nao esta na
+casa de destino**. Dois casos contam:
+
+- peca exposta pela candidata, por exemplo quando o lance retira o defensor;
+- peca que **ja estava sob ataque** antes da candidata, quando a candidata
+  escolhe nao salva-la nem defende-la. Nao salvar e uma decisao, e e ela que a
+  evidencia registra.
+
+A casa de destino pertence exclusivamente a `DESTINATION_OFFER`, entao os dois
+tipos nao se sobrepoem e nenhuma peca e contada duas vezes. Quando os dois
+aparecem no mesmo lance, `DESTINATION_OFFER` vence: peca posta na casa de
+destino e a oferta mais direta e e a que o adversario responde imediatamente.
+
+Evidencia registrada: casa oferecida, tipo da peca, valor nominal, todas as
+capturas legais que aceitam a oferta, se a melhor defesa medida aceitou e quanto
+material foi concedido nessa linha.
+
+Escolha determinista quando ha mais de uma peca pendurada:
+
+1. maior valor nominal;
+2. menor UCI de aceitacao;
+3. ordem da casa.
+
+Regras contra falso positivo, todas por construcao: apenas **lances legais** do
+adversario contam como aceitacao, o que descarta diagonal ou coluna bloqueada,
+peca cravada que nao pode capturar e ataque impedido por xeque em curso. Peao e
+rei nunca sao a peca oferecida. Peca pendurada, por si, nao e brilhantismo: se
+aceitar deixa quem jogou objetivamente pior sem compensacao medida,
+`GATE_SOUNDNESS_001` reprova. Compensacao nunca e presumida — ela vem da melhor
+defesa, da trajetoria material, da PV e da estabilidade.
+
+Exemplo canonico (`test_detects_the_rook_left_hanging_on_b1_after_e3`): apos
+`14.e3` na linha `1.Nf3 d5 2.c4 c6 3.cxd5 Nf6 4.dxc6 Nxc6 5.d4 g6 6.Nc3 Bg4
+7.d5 Nb4 8.Qa4+ Bd7 9.Qxb4 a5 10.Qb3 a4 11.Qb4 e5 12.Qh4 a3 13.Rb1 Bf5`, a
+torre de b1 e capturavel por `...Bxb1` pela diagonal `f5-e4-d3-c2-b1`. O destino
+`e3` contem um peao, entao so `LEFT_HANGING` ve a oferta.
 
 Confianca (`sacrifice_confidence`), pesos configuraveis, cada evidencia contando
 uma unica vez:
@@ -175,9 +219,40 @@ supera uma alternativa objetivamente melhor.
 
 Quando a jogada candidata produz xeque-mate confirmado pelas regras do
 tabuleiro, `GATE_SOUNDNESS_001` e `GATE_STABILITY_001` sao aprovados: nao existe
-defesa legal nem PV adicional para comparar. Essa excecao vale somente para
-xeque-mate, nao para outras posicoes terminais. A primeira camada nunca e
-relaxada para forcar um sacrificio.
+defesa legal nem PV adicional para comparar. A primeira camada nunca e relaxada
+para forcar um sacrificio.
+
+## Desfechos imediatos
+
+O seletor recebe o caminho ate a posicao (`PositionHistory`: FEN inicial mais os
+lances) e deriva dele a posicao raiz. Repeticao e a regra dos cinquenta lances
+nao estao na FEN; sem o caminho, nem o `BoardService` nem o motor as veem.
+
+### Mate
+
+Ver acima: solidez e estabilidade aprovadas com explicacao propria.
+
+### Empate
+
+Se a candidata encerra a partida em empate — afogamento, material insuficiente,
+cinquenta lances ou tripla repeticao —, valem tres regras:
+
+1. `EP_apos = 0.5`. E regra do jogo, nao estimativa de motor. O score que o
+   Stockfish devolveu para a posicao e descartado, junto com distancia de mate e
+   centipawns, porque nao descrevem mais nada.
+2. `EP_loss = max(0, EP_antes - 0.5)`. Um empate que joga uma vitoria fora
+   reprova em `GATE_QUALITY_001` com o valor entregue a vista, e fica fora da
+   camada `near_brilliant` por exceder `safe_max_expected_points_loss`.
+3. `GATE_SOUNDNESS_001` e `GATE_STABILITY_001` sao aprovados com explicacao de
+   desfecho ("a partida termina aqui"), nunca `indeterminate` por falta de
+   busca: nao ha defesa nem continuacao a medir. Nenhum dos dois aprova o lance
+   por si; quem barra o empate ruim e a qualidade.
+
+Um empate que nao concede nada, com `EP_antes` proximo de `0.5`, continua
+selecionavel como `near_brilliant`. Nao havia vitoria a preservar.
+
+Buscas de melhor defesa e de estabilidade nao sao executadas em posicao
+terminal, de qualquer tipo.
 
 ## Perfil por rating
 
@@ -193,3 +268,4 @@ aproximado.
 | `strict_v1` | 2026-08-12 | Definicao inicial dos sete portoes, mapeamentos de EP e pesos de pontuacao. |
 | `strict_v1` | 2026-08-13 | Fallback `near_brilliant` seguro antes da jogada normal do perfil. |
 | `strict_v1` | 2026-08-13 | Mate terminal confirma solidez/estabilidade; desempate quase brilhante prioriza qualidade objetiva. |
+| `strict_v1` | 2026-08-13 | `LEFT_HANGING` implementado; empate imediato vale `0.5` EP por regra do tabuleiro. Nenhum limiar alterado. Ver ADR 0008. |

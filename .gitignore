@@ -21,6 +21,18 @@ data/
 *.db
 out/
 reports/
+coverage.xml
+*.log
+logs/
+
+# Capturas e PGN exportados durante estudo ficam fora do versionamento
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.pgn
+!frontend/public/*.svg
 
 # Preferencias de ferramentas e artefatos de analise locais
 .claude/
@@ -28,11 +40,23 @@ reports/
 .hypothesis/
 graphify-out/
 .worktrees/
+.interface-design/
+
+# Editor e sistema operacional
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
 
 # Configuracao local que pode conter caminhos ou credenciais
 .env
 .env.*
 !.env.example
 
-# Dependencias do front
+# Front: dependencias e build sao gerados
 node_modules/
+frontend/dist/
+frontend/.vite/
+.vite/

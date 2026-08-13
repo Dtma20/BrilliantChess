@@ -155,7 +155,9 @@ Atualize, na mesma mudanca:
 - Entrega 3 (discovery + confirmation, EP loss): parcial — falta o estagio de
   estabilidade e o cache persistente.
 - Interface web local (jogo + analise): concluida, ver ADR 0005.
-- Laboratorio de duelo entre motores: interface concluida.
+- Laboratorio de duelo entre motores: concluido, com bancada de auditoria.
 - Migracao do front para React + Vite + Tailwind: concluida, ver ADR 0006.
-- Entrega 4 (detector de sacrificio): proxima.
+- Entrega 4 (detector de sacrificio): parcial — `DESTINATION_OFFER` e
+  `LEFT_HANGING` implementados, ver ADR 0008. Faltam `EXCHANGE_SACRIFICE`,
+  `DECLINED_RECAPTURE` e `CLEARANCE_OR_DEFLECTION`.
 - Entregas 5 a 9: pendentes, ver especificacao do projeto.
