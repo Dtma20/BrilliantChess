@@ -198,3 +198,27 @@ def test_engine_is_closed_on_shutdown(tmp_path):
     with TestClient(app):
         pass
     assert session.closed is True
+
+
+def test_all_engine_sessions_are_closed_on_shutdown_even_if_one_raises(tmp_path):
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        f"storage:\n  database_path: {(tmp_path / 'db.sqlite3').as_posix()}\n", encoding="utf-8"
+    )
+    app = create_app(build_container(config))
+    engine_session = StubSession()
+    pair_session = StubSession()
+
+    def raise_after_close():
+        engine_session.closed = True
+        raise RuntimeError("single engine shutdown failed")
+
+    engine_session.close = raise_after_close
+    app.state.engine_session = engine_session
+    app.state.engine_pair_session = pair_session
+
+    with pytest.raises(RuntimeError, match="single engine shutdown failed"), TestClient(app):
+        pass
+
+    assert engine_session.closed is True
+    assert pair_session.closed is True

@@ -80,6 +80,15 @@ web:
   analysis_discovery_nodes: 300000
   analysis_confirmation_nodes: 700000
   max_arrows: 3
+  lab:
+    max_fullmoves: 100
+    autoplay_delay_ms: 250
+    strict_multipv: 6
+    strict_candidates: 6
+    strict_discovery_nodes: 80000
+    strict_confirmation_nodes: 200000
+    strict_best_defense_nodes: 200000
+    strict_stability_nodes: 400000
 
 storage:
   database_path: data/brilliant_chess.sqlite3

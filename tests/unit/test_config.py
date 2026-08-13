@@ -72,3 +72,15 @@ def test_container_maps_each_stage_to_its_node_budget():
     assert container.budget_for(AnalysisStage.CONFIRMATION).nodes == 1_500_000
     assert container.budget_for(AnalysisStage.STABILITY).nodes == 4_000_000
     assert all(container.budget_for(stage).is_deterministic for stage in AnalysisStage)
+
+
+def test_lab_config_uses_fixed_node_budgets():
+    lab = Settings().web.lab
+
+    assert lab.max_fullmoves == 100
+    assert lab.strict_budget().discovery.nodes == 80_000
+    assert lab.strict_budget().confirmation.nodes == 200_000
+    assert lab.strict_budget().best_defense.nodes == 200_000
+    assert lab.strict_budget().stability is not None
+    assert lab.strict_budget().stability.nodes == 400_000
+    assert lab.strict_budget().max_candidates == 6

@@ -13,8 +13,10 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from brilliant_chess.application.choose_brilliant_move import StrictSearchBudget
 from brilliant_chess.domain.errors import ConfigurationError
 from brilliant_chess.domain.material import MaterialValues
+from brilliant_chess.domain.models import AnalysisBudget
 from brilliant_chess.domain.rule_set import (
     PriorPositionThresholds,
     QualityThresholds,
@@ -132,6 +134,27 @@ class EngineModel(_Strict):
     stability: StabilityModel = StabilityModel()
 
 
+class LabModel(_Strict):
+    max_fullmoves: int = Field(default=100, ge=1, le=100)
+    autoplay_delay_ms: int = Field(default=250, ge=50, le=10_000)
+    strict_multipv: int = Field(default=6, ge=1, le=16)
+    strict_candidates: int = Field(default=6, ge=1, le=16)
+    strict_discovery_nodes: int = Field(default=80_000, gt=0)
+    strict_confirmation_nodes: int = Field(default=200_000, gt=0)
+    strict_best_defense_nodes: int = Field(default=200_000, gt=0)
+    strict_stability_nodes: int = Field(default=400_000, gt=0)
+
+    def strict_budget(self) -> StrictSearchBudget:
+        return StrictSearchBudget(
+            discovery=AnalysisBudget(nodes=self.strict_discovery_nodes),
+            confirmation=AnalysisBudget(nodes=self.strict_confirmation_nodes),
+            best_defense=AnalysisBudget(nodes=self.strict_best_defense_nodes),
+            stability=AnalysisBudget(nodes=self.strict_stability_nodes),
+            multipv=self.strict_multipv,
+            max_candidates=min(self.strict_candidates, self.strict_multipv),
+        )
+
+
 class WebModel(_Strict):
     """Interface web local. O host padrao e loopback por decisao de fair play."""
 
@@ -141,6 +164,7 @@ class WebModel(_Strict):
     analysis_discovery_nodes: int = Field(default=300_000, gt=0)
     analysis_confirmation_nodes: int = Field(default=700_000, gt=0)
     max_arrows: int = Field(default=3, ge=1, le=8)
+    lab: LabModel = LabModel()
 
 
 class StorageModel(_Strict):

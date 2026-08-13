@@ -17,8 +17,10 @@ from fastapi.staticfiles import StaticFiles
 
 from brilliant_chess.adapters.board.service import PythonChessBoardService
 from brilliant_chess.bootstrap.container import Container, build_container
+from brilliant_chess.interfaces.web.engine_pair_session import EnginePairSession
 from brilliant_chess.interfaces.web.engine_session import EngineSession
 from brilliant_chess.interfaces.web.game_store import GameStore
+from brilliant_chess.interfaces.web.match_store import MatchStore
 from brilliant_chess.interfaces.web.routes import router
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -33,7 +35,16 @@ def create_app(container: Container | None = None) -> FastAPI:
             yield
         finally:
             session: EngineSession = app.state.engine_session
-            session.close()
+            pair_session: EnginePairSession = app.state.engine_pair_session
+            failure: BaseException | None = None
+            for resource in (session, pair_session):
+                try:
+                    resource.close()
+                except BaseException as exc:
+                    if failure is None:
+                        failure = exc
+            if failure is not None:
+                raise failure
 
     app = FastAPI(
         title="Brilliant Chess",
@@ -44,7 +55,9 @@ def create_app(container: Container | None = None) -> FastAPI:
     app.state.container = resolved
     app.state.board = PythonChessBoardService()
     app.state.games = GameStore()
+    app.state.matches = MatchStore()
     app.state.engine_session = EngineSession(resolved.settings)
+    app.state.engine_pair_session = EnginePairSession(resolved.settings)
     app.include_router(router)
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
