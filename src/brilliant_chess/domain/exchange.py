@@ -47,9 +47,13 @@ class ExchangeEvidence:
     material_after_best_acceptance: float | None = None
     material_captured_by_candidate: float = 0.0
     material_lost_by_mover: float = 0.0
+    material_captured_later_by_mover: float = 0.0
     net_material_concession: float = 0.0
+    sequence_uci: tuple[str, ...] = ()
+    sequence_san: tuple[str, ...] = ()
     clean_trade: bool = False
     obvious_recapture: bool = False
     temporary_offer: bool = False
     favorable_trade: bool = False
+    xray_recapture: bool = False
     trace: ExchangeTrace | None = None

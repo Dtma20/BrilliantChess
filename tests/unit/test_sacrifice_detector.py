@@ -51,6 +51,7 @@ def test_detects_a_capturable_non_pawn_offer_with_configured_material_value():
     assert evidence.offered_piece_type is PieceType.QUEEN
     assert evidence.nominal_value == 8.5
     assert evidence.acceptance_moves == ("h8h7",)
+    assert evidence.exchange is None
     assert evidence.signals.legal_capture_available is True
 
 
@@ -66,6 +67,7 @@ def test_detects_the_rook_left_hanging_on_b1_after_e3():
     assert evidence.offered_piece_type is PieceType.ROOK
     assert evidence.nominal_value == 5.0
     assert evidence.acceptance_moves == ("f5b1",)
+    assert evidence.exchange is None
 
 
 def test_detects_a_piece_newly_exposed_by_the_candidate():
@@ -139,6 +141,17 @@ def test_the_combined_detector_falls_back_to_left_hanging():
 
     assert evidence.kind is SacrificeKind.LEFT_HANGING
     assert evidence.offered_piece_square == "b1"
+
+
+def test_strict_v1_detector_exports_do_not_attach_v2_exchange_evidence():
+    board = PythonChessBoardService()
+    position = board.position_after("7r/7p/8/7Q/8/8/8/6KR w - - 0 1", ())
+
+    evidence = detect_sacrifice(board, position, "h5h7", material_values=MaterialValues())
+
+    assert evidence.detected is True
+    assert evidence.kind is SacrificeKind.DESTINATION_OFFER
+    assert evidence.exchange is None
 
 
 def test_the_offered_piece_on_the_destination_square_is_not_counted_twice():
