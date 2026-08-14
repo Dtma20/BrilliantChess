@@ -11,6 +11,7 @@ from brilliant_chess.application.choose_brilliant_move import (
     StrictSearchBudget,
     choose_brilliant_move,
 )
+from brilliant_chess.domain.errors import EngineError
 from brilliant_chess.domain.gates import GateResult
 from brilliant_chess.domain.models import AnalysisBudget, EngineIdentity, Position
 from brilliant_chess.domain.non_obviousness import NonObviousnessCondition
@@ -173,6 +174,38 @@ def test_v2_accepts_sound_move_that_improves_only_after_deeper_search():
     assert choice.selected.engine_identity.name == "ScriptedEngine"
     assert choice.selected.shallow_budget == AnalysisBudget(nodes=5_000)
     assert choice.selected.confirmation_budget == CONFIRMATION
+
+
+def test_v2_missing_engine_identity_is_conservative_instead_of_escaping():
+    scripted = scripted_engine_for_v2_case("deep_surprise")
+    engine = MissingIdentityEngine(script=scripted.script)
+
+    choice = choose_brilliant_move(
+        engine,
+        PythonChessBoardService(),
+        PositionHistory(SURPRISE_FEN),
+        RuleSet(id="strict_v2"),
+        v2_budget(),
+    )
+
+    assert choice.move is None
+    assert choice.selected is None
+    assert choice.candidates[0].engine_identity is None
+    assert choice.candidates[0].decision.selectable is False
+
+
+def test_v2_absent_shallow_rank_can_select_on_root_ep_improvement():
+    choice = choose_brilliant_move(
+        scripted_engine_for_v2_case("absent_from_shallow"),
+        PythonChessBoardService(),
+        PositionHistory(SURPRISE_FEN),
+        RuleSet(id="strict_v2"),
+        v2_budget(),
+    )
+
+    assert choice.selected is not None
+    assert choice.selected.non_obviousness.shallow_rank is None
+    assert choice.selected.non_obviousness.condition is NonObviousnessCondition.EP_IMPROVEMENT
 
 
 def test_best_defense_search_accepts_small_cross_search_ep_improvement(rules):
@@ -541,6 +574,11 @@ def scripted_engine_for_v2_case(case: str) -> ScriptedEngine:
         candidates = (("h4h6", 45), ("e2e3", 0), ("h4h5", -20))
         shallow = (("h4h6", 45), ("h4h5", 20), ("e2e3", 0))
         confirmations = (("h4h6", 45), ("e2e3", 40), ("h4h5", -20))
+    elif case == "absent_from_shallow":
+        position = Position.from_fen(SURPRISE_FEN)
+        candidates = (("e2e3", 0),)
+        shallow = (("h4h6", 45),)
+        confirmations = (("e2e3", 40),)
     else:
         raise AssertionError(f"unknown v2 scripted case: {case}")
 
@@ -554,6 +592,10 @@ def scripted_engine_for_v2_case(case: str) -> ScriptedEngine:
             for move, cp in shallow
         ),
     }
+    if case == "absent_from_shallow":
+        script[ScriptKey(position.fen, ("e2e3",), 5_000)] = (
+            evaluation("e2e3", position.side_to_move, centipawns=0, pv=("e2e3",)),
+        )
     for move, cp in confirmations:
         after = board.position_after(position.fen, (move,))
         defense = (
@@ -572,6 +614,11 @@ def scripted_engine_for_v2_case(case: str) -> ScriptedEngine:
             evaluation(move, position.side_to_move, centipawns=cp, pv=pv, depth=28),
         )
     return ScriptedEngine(script=script)
+
+
+class MissingIdentityEngine(ScriptedEngine):
+    def identity(self) -> EngineIdentity:
+        raise EngineError("identity unavailable")
 
 
 def _candidate(move_uci: str, *, expected_points_loss: float = 0.01) -> Candidate:

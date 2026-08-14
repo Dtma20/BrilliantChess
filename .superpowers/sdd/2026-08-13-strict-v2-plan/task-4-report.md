@@ -97,3 +97,44 @@ Result: all passed.
   documents. They were not modified.
 - Laboratory default strict-v2 policy/configuration and API serialization are
   intentionally deferred to Task 5, per the task boundary.
+
+## Fix round — reviewer findings
+
+Fix commit: the commit containing this report update.
+
+Added regression coverage for both findings:
+
+- a v2 engine whose `identity()` raises now produces conservative rejected
+  audits instead of escaping from `analyze_position()`;
+- a candidate absent from shallow MultiPV can use fixed-root shallow EP with
+  `shallow_rank=None` and pass through the EP-improvement condition, while
+  rank-based conditions still require ranks;
+- missing shallow EP evidence remains rejected.
+
+The analysis request now opts into a private unknown-identity sentinel only for
+strict_v2. strict_v1 keeps the prior identity behavior. The non-obviousness
+gate now validates evidence required by the selected condition rather than
+requiring a shallow rank for EP-only evidence.
+
+Fix-round RED:
+
+```text
+uv run pytest tests/unit/test_choose_brilliant_move.py tests/unit/test_non_obviousness.py -q
+```
+
+Result: 3 expected failures (identity escaped, absent-rank EP was rejected,
+and the direct EP-only gate regression failed).
+
+Fix-round GREEN and verification:
+
+```text
+uv run pytest tests/unit/test_choose_brilliant_move.py tests/unit/test_non_obviousness.py tests/unit/test_sacrifice_detector.py tests/unit/test_gates.py tests/unit/test_scoring.py -q
+uv run ruff check src/brilliant_chess/application/analyze_position.py src/brilliant_chess/application/choose_brilliant_move.py src/brilliant_chess/domain/gates.py src/brilliant_chess/domain/non_obviousness.py tests/unit/test_choose_brilliant_move.py tests/unit/test_non_obviousness.py
+uv run ruff format --check src/brilliant_chess/application/analyze_position.py src/brilliant_chess/application/choose_brilliant_move.py src/brilliant_chess/domain/gates.py src/brilliant_chess/domain/non_obviousness.py tests/unit/test_choose_brilliant_move.py tests/unit/test_non_obviousness.py
+uv run mypy src
+uv run pytest -q
+```
+
+Result: focused fix tests and required suite passed (26 focused tests; one
+existing skip), focused Ruff/format and mypy passed, and the full Python suite
+passed with existing slow-test skips and the existing FastAPI/httpx warning.

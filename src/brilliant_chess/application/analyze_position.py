@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from brilliant_chess.domain.errors import EngineError
 from brilliant_chess.domain.expected_points import expected_points_loss
 from brilliant_chess.domain.models import (
     AnalysisBudget,
@@ -23,6 +24,13 @@ from brilliant_chess.domain.values import Color, WarningCode
 from brilliant_chess.ports.board import BoardService
 from brilliant_chess.ports.engine import ChessEngine
 
+_MISSING_ENGINE_IDENTITY = EngineIdentity(
+    name="unknown",
+    version="unknown",
+    binary_sha256="",
+    nnue_name=None,
+)
+
 
 @dataclass(frozen=True)
 class AnalysisRequest:
@@ -31,6 +39,7 @@ class AnalysisRequest:
     confirmation_budget: AnalysisBudget
     multipv: int = 8
     max_candidates: int = 5
+    allow_missing_identity: bool = False
 
 
 @dataclass(frozen=True)
@@ -78,7 +87,7 @@ def analyze_position(
         return PositionAnalysis(
             position=request.position,
             side_to_move=request.position.side_to_move,
-            engine=engine.identity(),
+            engine=_identity(engine, request.allow_missing_identity),
             expected_points_before=0.0,
             candidates=(),
             warnings=(WarningCode.SHALLOW_BUDGET,),
@@ -103,7 +112,7 @@ def analyze_position(
     return PositionAnalysis(
         position=request.position,
         side_to_move=request.position.side_to_move,
-        engine=engine.identity(),
+        engine=_identity(engine, request.allow_missing_identity),
         expected_points_before=best_points,
         candidates=candidates,
         warnings=_warnings(shortlist, confirmed),
@@ -125,6 +134,15 @@ def _confirm(
         )
         confirmed.append(result[0] if result else item)
     return confirmed
+
+
+def _identity(engine: ChessEngine, allow_missing: bool) -> EngineIdentity:
+    try:
+        return engine.identity()
+    except (AttributeError, EngineError):
+        if not allow_missing:
+            raise
+        return _MISSING_ENGINE_IDENTITY
 
 
 @dataclass(frozen=True)

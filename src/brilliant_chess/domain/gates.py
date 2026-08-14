@@ -283,7 +283,6 @@ def gate_non_obviousness(
     if (
         evidence.shallow_nodes is None
         or evidence.shallow_multipv is None
-        or evidence.shallow_rank is None
         or evidence.shallow_expected_points is None
         or evidence.deep_rank is None
         or evidence.deep_expected_points is None

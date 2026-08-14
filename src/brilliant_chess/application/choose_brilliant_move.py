@@ -176,6 +176,7 @@ def choose_brilliant_move(
             confirmation_budget=budget.confirmation,
             multipv=budget.multipv,
             max_candidates=budget.max_candidates,
+            allow_missing_identity=rules.id == "strict_v2",
         ),
     )
     context = _AuditContext(

@@ -74,8 +74,17 @@ def test_shallow_top_two_escape_can_pass_without_ep_or_rank_gain(thresholds):
 
 def test_missing_shallow_or_deep_evidence_fails_conservatively(thresholds):
     result = gate_non_obviousness(
-        evidence(shallow_rank=None, deep_rank=2),
+        evidence(shallow_expected_points=None, deep_rank=2),
         thresholds,
     )
 
     assert result.status is GateStatus.FAILED
+
+
+def test_ep_improvement_accepts_missing_shallow_rank_from_root_search(thresholds):
+    result = gate_non_obviousness(
+        evidence(shallow_rank=None, condition=NonObviousnessCondition.EP_IMPROVEMENT),
+        thresholds,
+    )
+
+    assert result.status is GateStatus.PASSED
