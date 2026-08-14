@@ -55,10 +55,10 @@ const AUDIT: CandidateAudit = {
 }
 
 describe("GateRail", () => {
-  it("always shows the seven slots, in order", () => {
+  it("always shows the eight slots, in order", () => {
     render(<GateRail gates={GATES} />)
 
-    expect(screen.getAllByRole("img")).toHaveLength(7)
+    expect(screen.getAllByRole("img")).toHaveLength(8)
   })
 
   it("names each outcome in text, not only in colour", () => {
@@ -107,15 +107,16 @@ describe("SelectionMark", () => {
 })
 
 describe("SelectionLegend", () => {
-  it("explains the four marks in words", () => {
+  it("explains the five marks in words", () => {
     render(<SelectionLegend />)
     const items = screen.getAllByRole("listitem")
 
-    expect(items).toHaveLength(4)
-    expect(items[0]).toHaveTextContent("strict_v1")
-    expect(items[1]).toHaveTextContent("reprovada em algum portão de classificação")
-    expect(items[2]).toHaveTextContent("Nada passou pela auditoria")
-    expect(items[3]).toHaveTextContent("sem nenhum critério de brilhantismo")
+    expect(items).toHaveLength(5)
+    expect(items[0]).toHaveTextContent("strict_v2")
+    expect(items[1]).toHaveTextContent("strict_v1")
+    expect(items[2]).toHaveTextContent("reprovada em algum portão de classificação")
+    expect(items[3]).toHaveTextContent("Nada passou pela auditoria")
+    expect(items[4]).toHaveTextContent("sem nenhum critério de brilhantismo")
   })
 })
 

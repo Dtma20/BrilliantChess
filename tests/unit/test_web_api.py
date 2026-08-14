@@ -14,7 +14,12 @@ from brilliant_chess.application.analyze_position import Candidate
 from brilliant_chess.application.choose_brilliant_move import BrilliantMoveChoice, CandidateAudit
 from brilliant_chess.application.play_match import MatchPolicy, MatchProfile
 from brilliant_chess.bootstrap.container import build_container
-from brilliant_chess.domain.models import Move
+from brilliant_chess.domain.exchange import ExchangeDisposition, ExchangeEvidence
+from brilliant_chess.domain.models import AnalysisBudget, EngineIdentity, Move
+from brilliant_chess.domain.non_obviousness import (
+    NonObviousnessCondition,
+    NonObviousnessEvidence,
+)
 from brilliant_chess.domain.sacrifice import NO_SACRIFICE, SacrificeEvidence
 from brilliant_chess.domain.scoring import BrilliantDecision, ScoreBreakdown
 from brilliant_chess.domain.values import Color, GameStatus, PieceType, SacrificeKind
@@ -114,6 +119,109 @@ def test_create_read_and_step_match(client):
     assert stepped["moves"][0]["color"] == "white"
     assert stepped["initial_fen"] == STARTING_FEN
     assert client.get(f"/api/match/{created['match_id']}").json()["match_id"] == created["match_id"]
+
+
+def test_api_accepts_strict_v2_and_reports_its_rule_set(client):
+    response = client.post(
+        "/api/match",
+        json={
+            "white": {"strength_key": "maximo", "policy": "strict_v2"},
+            "black": {"strength_key": "iniciante", "policy": "normal"},
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["white"]["policy"] == "strict_v2"
+
+
+def test_lab_reports_strict_v2_as_the_default_policy(client):
+    assert client.get("/api/lab").json()["strict_policy"] == "strict_v2"
+
+
+def test_v2_match_audit_serializes_rejected_exchange_and_provenance(client, monkeypatch):
+    candidate = Candidate(
+        move_uci="a2a3",
+        move_san="a3",
+        rank=1,
+        expected_points_after=0.6,
+        expected_points_loss=0.0,
+        centipawns=40,
+        mate_in=None,
+        depth=20,
+        nodes=100,
+        pv_uci=("a2a3",),
+        pv_san=("a3",),
+    )
+    exchange = ExchangeEvidence(
+        disposition=ExchangeDisposition.CLEAN_EQUAL_TRADE,
+        material_before=0.0,
+        material_immediately_after=3.2,
+        material_after_best_acceptance=-0.1,
+        material_captured_by_candidate=3.2,
+        material_lost_by_mover=3.3,
+        net_material_concession=0.1,
+        sequence_uci=("a2a3", "b4a3"),
+        sequence_san=("a3", "Bxa3"),
+        clean_trade=True,
+        obvious_recapture=True,
+    )
+    decision = BrilliantDecision(
+        is_brilliant=False,
+        selectable=False,
+        score=61.0,
+        gates=(),
+        sacrifice=SacrificeEvidence(detected=False, exchange=exchange),
+        breakdown=ScoreBreakdown(10.0, 10.0, 10.0, 10.0, 10.0),
+        rule_set_version="strict_v2",
+    )
+    audit = CandidateAudit(
+        candidate,
+        decision,
+        best_defense_uci="b4a3",
+        stability_depth=28,
+        exchange=exchange,
+        non_obviousness=NonObviousnessEvidence(
+            shallow_rank=4,
+            deep_rank=1,
+            shallow_expected_points=0.51,
+            deep_expected_points=0.6,
+            expected_points_improvement=0.09,
+            shallow_nodes=5_000,
+            shallow_multipv=5,
+            condition=NonObviousnessCondition.EP_IMPROVEMENT,
+        ),
+        detector_version="exchange_aware_v1",
+        engine_identity=EngineIdentity("Stockfish", "17", "abc", "nn-123"),
+        discovery_budget=AnalysisBudget(nodes=80_000),
+        confirmation_budget=AnalysisBudget(nodes=200_000),
+        best_defense_budget=AnalysisBudget(nodes=200_000),
+        stability_budget=AnalysisBudget(nodes=400_000),
+        shallow_budget=AnalysisBudget(nodes=5_000),
+        shallow_multipv=5,
+    )
+    monkeypatch.setattr(
+        routes,
+        "choose_brilliant_move",
+        lambda *_, **__: BrilliantMoveChoice(None, None, (audit,), near_selected=audit),
+    )
+
+    match = client.post(
+        "/api/match",
+        json={
+            "white": {"strength_key": "maximo", "policy": "strict_v2"},
+            "black": {"strength_key": "iniciante", "policy": "normal"},
+        },
+    ).json()
+    payload = client.post(f"/api/match/{match['match_id']}/step").json()
+    wire = payload["moves"][0]["audit"]
+
+    assert wire["rule_set_version"] == "strict_v2"
+    assert wire["exchange"]["disposition"] == "clean_equal_trade"
+    assert wire["exchange"]["clean_trade"] is True
+    assert wire["non_obviousness"]["shallow_nodes"] == 5_000
+    assert wire["detector_version"] == "exchange_aware_v1"
+    assert wire["engine_identity"]["nnue_name"] == "nn-123"
+    assert wire["budgets"]["shallow_nodes"] == 5_000
 
 
 def test_match_steps_normal_white_then_black_with_each_profile_strength(client):

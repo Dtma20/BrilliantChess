@@ -40,7 +40,7 @@ function audit(overrides: Partial<CandidateAudit> = {}): CandidateAudit {
 }
 
 describe("GATES", () => {
-  it("keeps the seven mandatory gates in the domain order", () => {
+  it("keeps the eight mandatory gates in the domain order", () => {
     expect(GATES.map((gate) => gate.id)).toEqual([
       "GATE_LEGAL_001",
       "GATE_QUALITY_001",
@@ -49,6 +49,7 @@ describe("GATES", () => {
       "GATE_NOT_BAD_AFTER_001",
       "GATE_NOT_ALREADY_WON_001",
       "GATE_STABILITY_001",
+      "GATE_NON_OBVIOUS_001",
     ])
   })
 
@@ -64,6 +65,7 @@ describe("GATES", () => {
       GATE_NOT_BAD_AFTER_001: "≥",
       GATE_NOT_ALREADY_WON_001: "<",
       GATE_STABILITY_001: "≤",
+      GATE_NON_OBVIOUS_001: null,
     })
   })
 })
@@ -206,7 +208,7 @@ describe("domain vocabulary fallbacks", () => {
 })
 
 describe("selectionCounts", () => {
-  it("keeps the four known kinds and adds whatever else arrived", () => {
+  it("keeps the five known kinds and adds whatever else arrived", () => {
     const moves = [
       { selection: "strict_v1" },
       { selection: "strict_v1" },
@@ -214,6 +216,7 @@ describe("selectionCounts", () => {
     ] as MatchMove[]
 
     expect(selectionCounts(moves)).toEqual([
+      { kind: "strict_v2", total: 0 },
       { kind: "strict_v1", total: 2 },
       { kind: "near_brilliant", total: 0 },
       { kind: "fallback", total: 0 },

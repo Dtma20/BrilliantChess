@@ -13,7 +13,13 @@ from brilliant_chess.application.play_match import (
     MatchState,
     SelectionKind,
 )
+from brilliant_chess.domain.exchange import ExchangeDisposition, ExchangeEvidence
 from brilliant_chess.domain.gates import GateResult
+from brilliant_chess.domain.models import AnalysisBudget, EngineIdentity
+from brilliant_chess.domain.non_obviousness import (
+    NonObviousnessCondition,
+    NonObviousnessEvidence,
+)
 from brilliant_chess.domain.sacrifice import NO_SACRIFICE, SacrificeEvidence
 from brilliant_chess.domain.scoring import BrilliantDecision, ScoreBreakdown
 from brilliant_chess.domain.values import (
@@ -152,6 +158,76 @@ def test_match_pgn_records_the_measured_sacrifice_evidence(board):
     assert "conceded=5.00" in text
     assert "best_defense=Bxb1" in text
     assert "unmet=GATE_SACRIFICE_001" in text
+
+
+def test_match_pgn_records_compact_v2_provenance_without_changing_v1_comments(board):
+    exchange = ExchangeEvidence(
+        disposition=ExchangeDisposition.CLEAN_EQUAL_TRADE,
+        material_before=0.0,
+        material_immediately_after=3.2,
+        material_after_best_acceptance=-0.1,
+        material_captured_by_candidate=3.2,
+        material_lost_by_mover=3.3,
+        net_material_concession=0.1,
+        sequence_uci=("a2a3", "b4a3"),
+        sequence_san=("a3", "Bxa3"),
+        clean_trade=True,
+        obvious_recapture=True,
+    )
+    audit = MatchAudit(
+        decision=BrilliantDecision(
+            is_brilliant=False,
+            selectable=False,
+            score=48.0,
+            gates=(),
+            sacrifice=SacrificeEvidence(detected=False, exchange=exchange),
+            breakdown=ScoreBreakdown(0.0, 0.0, 0.0, 0.0, 0.0),
+            rule_set_version="strict_v2",
+        ),
+        best_defense_uci="b4a3",
+        stability_depth=28,
+        exchange=exchange,
+        non_obviousness=NonObviousnessEvidence(
+            shallow_rank=4,
+            deep_rank=1,
+            shallow_expected_points=0.51,
+            deep_expected_points=0.6,
+            expected_points_improvement=0.09,
+            shallow_nodes=5_000,
+            shallow_multipv=5,
+            condition=NonObviousnessCondition.EP_IMPROVEMENT,
+        ),
+        detector_version="exchange_aware_v1",
+        engine_identity=EngineIdentity("Stockfish", "17", "abc", "nn-123"),
+        discovery_budget=AnalysisBudget(nodes=80_000),
+        confirmation_budget=AnalysisBudget(nodes=200_000),
+        best_defense_budget=AnalysisBudget(nodes=200_000),
+        stability_budget=AnalysisBudget(nodes=400_000),
+        shallow_budget=AnalysisBudget(nodes=5_000),
+        shallow_multipv=5,
+    )
+    state = replace(
+        match_state(),
+        white=MatchProfile("maximo", MatchPolicy.STRICT_V2),
+        moves=(
+            MatchMove(Color.WHITE, "a2a3", "a3", SelectionKind.STRICT_V2, audit),
+            *match_state().moves[1:],
+        ),
+    )
+
+    text = build_match_pgn(
+        state,
+        board.view(STARTING_FEN, ()),
+        board.view(STARTING_FEN, state.moves_uci),
+        standard_fen=STARTING_FEN,
+    )
+
+    assert "policy=strict_v2 selection=strict_v2" in text
+    assert "exchange=clean_equal_trade" in text
+    assert "non_obvious=ep_improvement" in text
+    assert "detector=exchange_aware_v1" in text
+    assert "nnue=nn-123" in text
+    assert "nodes=shallow:5000,discovery:80000,confirmation:200000" in text
 
 
 def test_match_pgn_records_an_immediate_terminal_draw(board):

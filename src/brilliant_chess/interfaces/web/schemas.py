@@ -6,7 +6,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from brilliant_chess.application import play_match
 from brilliant_chess.application.analyze_position import Candidate, PositionAnalysis
+from brilliant_chess.domain.exchange import ExchangeEvidence
 from brilliant_chess.domain.gates import GateResult
+from brilliant_chess.domain.models import AnalysisBudget, EngineIdentity
+from brilliant_chess.domain.non_obviousness import NonObviousnessEvidence
 from brilliant_chess.domain.sacrifice import SacrificeEvidence
 from brilliant_chess.domain.values import Color, GameStatus, PieceType, SacrificeKind
 from brilliant_chess.ports.board import BoardView
@@ -39,7 +42,7 @@ class MatchProfileIn(_Model):
 
 class NewMatchIn(_Model):
     white: MatchProfileIn = MatchProfileIn(
-        strength_key="maximo", policy=play_match.MatchPolicy.STRICT_V1
+        strength_key="maximo", policy=play_match.MatchPolicy.STRICT_V2
     )
     black: MatchProfileIn = MatchProfileIn(
         strength_key="iniciante", policy=play_match.MatchPolicy.NORMAL
@@ -100,6 +103,51 @@ class SacrificeOut(_Model):
     material_conceded: float
 
 
+class ExchangeOut(_Model):
+    disposition: str
+    material_before: float
+    material_immediately_after: float
+    material_after_best_acceptance: float | None
+    material_captured_by_candidate: float
+    material_lost_by_mover: float
+    material_captured_later_by_mover: float
+    net_material_concession: float
+    sequence_uci: list[str]
+    sequence_san: list[str]
+    clean_trade: bool
+    obvious_recapture: bool
+    temporary_offer: bool
+    favorable_trade: bool
+    xray_recapture: bool
+
+
+class NonObviousnessOut(_Model):
+    shallow_rank: int | None
+    deep_rank: int | None
+    shallow_expected_points: float | None
+    deep_expected_points: float | None
+    expected_points_improvement: float | None
+    shallow_nodes: int | None
+    shallow_multipv: int | None
+    condition: str | None
+
+
+class EngineIdentityOut(_Model):
+    name: str
+    version: str
+    binary_sha256: str
+    nnue_name: str | None
+
+
+class NodeBudgetsOut(_Model):
+    discovery_nodes: int | None
+    confirmation_nodes: int | None
+    best_defense_nodes: int | None
+    stability_nodes: int | None
+    shallow_nodes: int | None
+    shallow_multipv: int | None
+
+
 class CandidateAuditOut(_Model):
     selected_uci: str
     selected_san: str
@@ -109,6 +157,11 @@ class CandidateAuditOut(_Model):
     reason_codes: list[str]
     sacrifice: SacrificeOut | None = None
     best_defense_san: str | None = None
+    exchange: ExchangeOut | None = None
+    non_obviousness: NonObviousnessOut | None = None
+    detector_version: str | None = None
+    engine_identity: EngineIdentityOut | None = None
+    budgets: NodeBudgetsOut | None = None
     #: Desfecho imediato do lance, quando ele encerra a partida.
     terminal_status: GameStatus | None = None
 
@@ -129,6 +182,7 @@ class LabOut(_Model):
     max_fullmoves: int
     max_plies: int
     autoplay_delay_ms: int
+    strict_policy: play_match.MatchPolicy
 
 
 class MatchOut(_Model):
@@ -268,6 +322,78 @@ def sacrifice_out(
         accepted_by_best_defense=accepted_by_best_defense,
         material_conceded=material_conceded,
     )
+
+
+def exchange_out(evidence: ExchangeEvidence | None) -> ExchangeOut | None:
+    if evidence is None:
+        return None
+    return ExchangeOut(
+        disposition=evidence.disposition.value,
+        material_before=evidence.material_before,
+        material_immediately_after=evidence.material_immediately_after,
+        material_after_best_acceptance=evidence.material_after_best_acceptance,
+        material_captured_by_candidate=evidence.material_captured_by_candidate,
+        material_lost_by_mover=evidence.material_lost_by_mover,
+        material_captured_later_by_mover=evidence.material_captured_later_by_mover,
+        net_material_concession=evidence.net_material_concession,
+        sequence_uci=list(evidence.sequence_uci),
+        sequence_san=list(evidence.sequence_san),
+        clean_trade=evidence.clean_trade,
+        obvious_recapture=evidence.obvious_recapture,
+        temporary_offer=evidence.temporary_offer,
+        favorable_trade=evidence.favorable_trade,
+        xray_recapture=evidence.xray_recapture,
+    )
+
+
+def non_obviousness_out(evidence: NonObviousnessEvidence | None) -> NonObviousnessOut | None:
+    if evidence is None:
+        return None
+    return NonObviousnessOut(
+        shallow_rank=evidence.shallow_rank,
+        deep_rank=evidence.deep_rank,
+        shallow_expected_points=evidence.shallow_expected_points,
+        deep_expected_points=evidence.deep_expected_points,
+        expected_points_improvement=evidence.expected_points_improvement,
+        shallow_nodes=evidence.shallow_nodes,
+        shallow_multipv=evidence.shallow_multipv,
+        condition=None if evidence.condition is None else evidence.condition.value,
+    )
+
+
+def engine_identity_out(identity: EngineIdentity | None) -> EngineIdentityOut | None:
+    if identity is None:
+        return None
+    return EngineIdentityOut(
+        name=identity.name,
+        version=identity.version,
+        binary_sha256=identity.binary_sha256,
+        nnue_name=identity.nnue_name,
+    )
+
+
+def node_budgets_out(audit: play_match.MatchAudit) -> NodeBudgetsOut | None:
+    budgets = (
+        audit.discovery_budget,
+        audit.confirmation_budget,
+        audit.best_defense_budget,
+        audit.stability_budget,
+        audit.shallow_budget,
+    )
+    if not any(budget is not None for budget in budgets):
+        return None
+    return NodeBudgetsOut(
+        discovery_nodes=_budget_nodes(audit.discovery_budget),
+        confirmation_nodes=_budget_nodes(audit.confirmation_budget),
+        best_defense_nodes=_budget_nodes(audit.best_defense_budget),
+        stability_nodes=_budget_nodes(audit.stability_budget),
+        shallow_nodes=_budget_nodes(audit.shallow_budget),
+        shallow_multipv=audit.shallow_multipv,
+    )
+
+
+def _budget_nodes(budget: AnalysisBudget | None) -> int | None:
+    return None if budget is None else budget.nodes
 
 
 def analysis_out(

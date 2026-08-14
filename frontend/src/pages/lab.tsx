@@ -63,7 +63,7 @@ export function LabPage() {
   const [strengths, setStrengths] = useState<Strength[] | null>(null)
   const [white, setWhite] = useState<MatchProfileInput>({
     strength_key: "maximo",
-    policy: "strict_v1",
+    policy: "strict_v2",
   })
   const [black, setBlack] = useState<MatchProfileInput>({
     strength_key: "iniciante",
@@ -389,9 +389,10 @@ export function LabPage() {
           <Drawer title="Como a política estrita decide">
             <p className="m-0 text-[0.78rem] leading-snug text-ink-3">
               <code className="text-ink-2">normal</code> joga a melhor jogada do perfil.{" "}
-              <code className="text-brass">strict_v1</code> passa cada candidata por descoberta,
-              confirmação, melhor defesa e estabilidade, e só chama de brilhante o que aprova nos
-              sete portões. Por isso é mais lenta.
+              <code className="text-brass">strict_v2</code> passa cada candidata por descoberta,
+              confirmação, melhor defesa, estabilidade e não obviedade, e só chama de brilhante o que
+              aprova nos oito portões. <code>strict_v1</code> continua disponível para reproduzir o
+              caminho histórico.
             </p>
           </Drawer>
         </Register>
@@ -838,6 +839,7 @@ function SideSetup({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
+          <SelectItem value="strict_v2">strict_v2</SelectItem>
           <SelectItem value="strict_v1">strict_v1</SelectItem>
           <SelectItem value="normal">normal</SelectItem>
         </SelectContent>

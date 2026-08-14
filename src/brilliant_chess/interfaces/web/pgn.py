@@ -139,6 +139,52 @@ def _evidence_fields(audit: play_match.MatchAudit) -> list[str]:
         fields.append("unmet=" + ",".join(unmet))
     if audit.terminal_status is not None:
         fields.append(f"end={audit.terminal_status.value}")
+    fields.extend(_v2_evidence_fields(audit))
+    return fields
+
+
+def _v2_evidence_fields(audit: play_match.MatchAudit) -> list[str]:
+    fields: list[str] = []
+    if audit.exchange is not None:
+        exchange = audit.exchange
+        fields.append(f"exchange={exchange.disposition.value}")
+        fields.append(f"net_concession={exchange.net_material_concession:.2f}")
+        fields.append(f"clean_trade={'yes' if exchange.clean_trade else 'no'}")
+        if exchange.sequence_uci:
+            fields.append("exchange_line=" + ",".join(exchange.sequence_uci))
+    if audit.non_obviousness is not None:
+        evidence = audit.non_obviousness
+        condition = "none" if evidence.condition is None else evidence.condition.value
+        fields.append(f"non_obvious={condition}")
+        if evidence.shallow_rank is not None:
+            fields.append(f"shallow_rank={evidence.shallow_rank}")
+        if evidence.deep_rank is not None:
+            fields.append(f"deep_rank={evidence.deep_rank}")
+        if evidence.expected_points_improvement is not None:
+            fields.append(f"ep_improvement={evidence.expected_points_improvement:.4f}")
+    if audit.detector_version is not None:
+        fields.append(f"detector={audit.detector_version}")
+    if audit.engine_identity is not None:
+        identity = audit.engine_identity
+        fields.append(f"engine={identity.name}@{identity.version}")
+        fields.append(f"nnue={identity.nnue_name or 'unknown'}")
+    nodes = _node_fields(audit)
+    if nodes:
+        fields.append("nodes=" + ",".join(nodes))
+    return fields
+
+
+def _node_fields(audit: play_match.MatchAudit) -> list[str]:
+    values = (
+        ("shallow", audit.shallow_budget),
+        ("discovery", audit.discovery_budget),
+        ("confirmation", audit.confirmation_budget),
+        ("best_defense", audit.best_defense_budget),
+        ("stability", audit.stability_budget),
+    )
+    fields = [f"{name}:{budget.nodes}" for name, budget in values if budget is not None]
+    if audit.shallow_multipv is not None:
+        fields.append(f"shallow_multipv:{audit.shallow_multipv}")
     return fields
 
 

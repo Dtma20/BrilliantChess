@@ -1,0 +1,105 @@
+# Perfil strict_v2: troca-aware e nao obvio, separado do historico strict_v1.
+# Estes limiares sao hipoteses de engenharia deste projeto; nao sao os do
+# Chess.com. A politica continua local, explicavel e deterministica.
+
+rules:
+  id: strict_v2
+  rating_profile: strict
+
+  quality:
+    max_expected_points_loss: 0.015
+    require_top_n: 3
+
+  resulting_position:
+    min_expected_points_after: 0.45
+
+  prior_position:
+    max_expected_points_before: 0.95
+
+  sacrifice:
+    min_nominal_value: 2.75
+    min_confidence: 0.70
+    min_net_material_concession: 1.0
+    equal_trade_tolerance: 0.5
+    acceptance_search_plies: 4
+    exchange_search_plies: 8
+    compensation_horizon_plies: 10
+    confidence_weights:
+      legal_capture_available: 0.35
+      material_deficit_in_acceptance: 0.20
+      engine_considers_acceptance: 0.15
+      tactical_mechanism_in_pv: 0.15
+      persists_under_deeper_search: 0.15
+
+  non_obviousness:
+    shallow_nodes: 5000
+    shallow_multipv: 5
+    min_expected_points_improvement: 0.03
+    max_obvious_shallow_rank: 2
+    max_confirmed_rank: 3
+    min_rank_improvement: 2
+
+  robustness:
+    max_ep_drift_on_deeper_search: 0.02
+    min_pv_overlap_plies: 2
+    stability_threshold_margin: 0.01
+
+  scoring:
+    quality_weight: 30
+    sacrifice_weight: 35
+    forcingness_weight: 15
+    uniqueness_weight: 10
+    robustness_weight: 10
+
+  selection:
+    safe_max_expected_points_loss: 0.03
+    uniqueness_equivalence_margin: 0.02
+
+  material_values:
+    pawn: 1.0
+    knight: 3.2
+    bishop: 3.3
+    rook: 5.0
+    queen: 9.0
+
+engine:
+  binary_path: null
+  threads: 6
+  hash_mb: 1024
+  workers: 1
+  timeout_seconds: 120.0
+  discovery:
+    multipv: 12
+    nodes: 400000
+  confirmation:
+    candidates: 6
+    nodes_per_candidate: 1500000
+  stability:
+    enabled: true
+    nodes_per_candidate: 4000000
+
+web:
+  host: 127.0.0.1
+  port: 8000
+  analysis_multipv: 6
+  analysis_discovery_nodes: 300000
+  analysis_confirmation_nodes: 700000
+  max_arrows: 3
+  lab:
+    max_fullmoves: 100
+    autoplay_delay_ms: 250
+    strict_policy: strict_v2
+    strict_multipv: 6
+    strict_candidates: 6
+    strict_discovery_nodes: 80000
+    strict_confirmation_nodes: 200000
+    strict_best_defense_nodes: 200000
+    strict_stability_nodes: 400000
+    strict_shallow_nodes: 5000
+    strict_shallow_multipv: 5
+
+storage:
+  database_path: data/brilliant_chess.sqlite3
+
+logging:
+  level: INFO

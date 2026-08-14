@@ -6,7 +6,9 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 
 from brilliant_chess.domain.errors import DomainError
-from brilliant_chess.domain.models import Move
+from brilliant_chess.domain.exchange import ExchangeEvidence
+from brilliant_chess.domain.models import AnalysisBudget, EngineIdentity, Move
+from brilliant_chess.domain.non_obviousness import NonObviousnessEvidence
 from brilliant_chess.domain.scoring import BrilliantDecision
 from brilliant_chess.domain.strength import strength_by_key
 from brilliant_chess.domain.values import GAME_STATUS_TEXTS, Color, GameStatus
@@ -16,11 +18,13 @@ from brilliant_chess.ports.board import BoardService, BoardView
 class MatchPolicy(StrEnum):
     NORMAL = "normal"
     STRICT_V1 = "strict_v1"
+    STRICT_V2 = "strict_v2"
 
 
 class SelectionKind(StrEnum):
     NORMAL = "normal"
     STRICT_V1 = "strict_v1"
+    STRICT_V2 = "strict_v2"
     NEAR_BRILLIANT = "near_brilliant"
     FALLBACK = "fallback"
 
@@ -43,6 +47,16 @@ class MatchAudit:
     defense_accepted: bool = False
     material_conceded: float = 0.0
     terminal_status: GameStatus | None = None
+    exchange: ExchangeEvidence | None = None
+    non_obviousness: NonObviousnessEvidence | None = None
+    detector_version: str | None = None
+    engine_identity: EngineIdentity | None = None
+    discovery_budget: AnalysisBudget | None = None
+    confirmation_budget: AnalysisBudget | None = None
+    best_defense_budget: AnalysisBudget | None = None
+    stability_budget: AnalysisBudget | None = None
+    shallow_budget: AnalysisBudget | None = None
+    shallow_multipv: int | None = None
 
 
 @dataclass(frozen=True)

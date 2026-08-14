@@ -32,6 +32,7 @@ export interface SelectionMeta {
 }
 
 export const SELECTION_ORDER: SelectionKind[] = [
+  "strict_v2",
   "strict_v1",
   "near_brilliant",
   "fallback",
@@ -39,6 +40,13 @@ export const SELECTION_ORDER: SelectionKind[] = [
 ]
 
 export const SELECTION_META: Record<SelectionKind, SelectionMeta> = {
+  strict_v2: {
+    mark: "✦",
+    label: "strict_v2",
+    short: "aprovada nos oito portões",
+    description: "Passou pelos oito portões obrigatórios desta política.",
+    tone: "audited",
+  },
   strict_v1: {
     mark: "◆",
     label: "strict_v1",
@@ -107,6 +115,7 @@ export const GATES: GateMeta[] = [
   // `gate_not_already_won` usa `<` estrito, não `<=`.
   { id: "GATE_NOT_ALREADY_WON_001", name: "Não era ganho", tile: "G", relation: "<" },
   { id: "GATE_STABILITY_001", name: "Estabilidade", tile: "E", relation: "≤" },
+  { id: "GATE_NON_OBVIOUS_001", name: "Não óbvia", tile: "N", relation: null },
 ]
 
 const GATE_GLYPHS: Record<GateStatus, string> = {

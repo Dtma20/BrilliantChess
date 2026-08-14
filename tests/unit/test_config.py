@@ -15,6 +15,7 @@ from brilliant_chess.domain.errors import ConfigurationError
 from brilliant_chess.domain.values import AnalysisStage
 
 STRICT_CONFIG = Path("config/strict_v1.yaml")
+STRICT_V2_CONFIG = Path("config/strict_v2.yaml")
 DEV_CONFIG = Path("config/development.yaml")
 
 
@@ -25,6 +26,21 @@ def test_shipped_configs_load_and_convert_to_rule_sets():
         assert rules.id == "strict_v1"
         assert rules.quality.max_expected_points_loss == pytest.approx(0.015)
         assert rules.scoring.total == pytest.approx(100.0)
+
+
+def test_shipped_v2_config_loads_separately():
+    settings = load_settings(STRICT_V2_CONFIG)
+
+    assert settings.to_rule_set().id == "strict_v2"
+    assert settings.to_rule_set().non_obviousness.shallow_nodes == 5_000
+    assert settings.to_rule_set().sacrifice.exchange_search_plies == 8
+
+
+def test_container_resolves_both_historical_and_v2_rules():
+    container = build_container(STRICT_CONFIG)
+
+    assert container.rule_set_for("strict_v1").id == "strict_v1"
+    assert container.rule_set_for("strict_v2").id == "strict_v2"
 
 
 def test_missing_file_is_a_configuration_error(tmp_path):

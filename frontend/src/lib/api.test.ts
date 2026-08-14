@@ -17,12 +17,35 @@ afterEach(() => {
 
 describe("api", () => {
   it("hits the local endpoints with relative paths", async () => {
-    const fetchMock = respond({ schema_version: "1", max_fullmoves: 100 })
+    const fetchMock = respond({ schema_version: "1", max_fullmoves: 100, strict_policy: "strict_v2" })
     vi.stubGlobal("fetch", fetchMock)
 
     await api.lab()
 
     expect(fetchMock).toHaveBeenCalledWith("/api/lab", expect.anything())
+  })
+
+  it("accepts the versioned strict_v2 laboratory policy", async () => {
+    const fetchMock = respond({
+      schema_version: "2",
+      match_id: "m1",
+      white: { policy: "strict_v2" },
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await api.createMatch({
+      white: { strength_key: "maximo", policy: "strict_v2" },
+      black: { strength_key: "iniciante", policy: "normal" },
+    })
+
+    expect(fetchMock.mock.calls[0][1]).toEqual(
+      expect.objectContaining({
+        body: JSON.stringify({
+          white: { strength_key: "maximo", policy: "strict_v2" },
+          black: { strength_key: "iniciante", policy: "normal" },
+        }),
+      }),
+    )
   })
 
   it("escapes identifiers in the path", async () => {

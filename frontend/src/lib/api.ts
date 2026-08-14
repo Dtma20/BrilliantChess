@@ -23,9 +23,14 @@ export type GameStatus =
   | "draw_fifty_moves"
   | "draw_threefold_repetition"
 
-export type MatchPolicy = "normal" | "strict_v1"
+export type MatchPolicy = "normal" | "strict_v1" | "strict_v2"
 
-export type SelectionKind = "normal" | "strict_v1" | "near_brilliant" | "fallback"
+export type SelectionKind =
+  | "normal"
+  | "strict_v1"
+  | "strict_v2"
+  | "near_brilliant"
+  | "fallback"
 
 export type GateStatus = "passed" | "failed" | "indeterminate"
 
@@ -96,6 +101,51 @@ export interface Sacrifice {
   material_conceded: number
 }
 
+export interface ExchangeEvidence {
+  disposition: string
+  material_before: number
+  material_immediately_after: number
+  material_after_best_acceptance: number | null
+  material_captured_by_candidate: number
+  material_lost_by_mover: number
+  material_captured_later_by_mover: number
+  net_material_concession: number
+  sequence_uci: string[]
+  sequence_san: string[]
+  clean_trade: boolean
+  obvious_recapture: boolean
+  temporary_offer: boolean
+  favorable_trade: boolean
+  xray_recapture: boolean
+}
+
+export interface NonObviousnessEvidence {
+  shallow_rank: number | null
+  deep_rank: number | null
+  shallow_expected_points: number | null
+  deep_expected_points: number | null
+  expected_points_improvement: number | null
+  shallow_nodes: number | null
+  shallow_multipv: number | null
+  condition: string | null
+}
+
+export interface EngineIdentity {
+  name: string
+  version: string
+  binary_sha256: string
+  nnue_name: string | null
+}
+
+export interface NodeBudgets {
+  discovery_nodes: number | null
+  confirmation_nodes: number | null
+  best_defense_nodes: number | null
+  stability_nodes: number | null
+  shallow_nodes: number | null
+  shallow_multipv: number | null
+}
+
 export interface CandidateAudit {
   selected_uci: string
   selected_san: string
@@ -106,6 +156,11 @@ export interface CandidateAudit {
   sacrifice: Sacrifice | null
   best_defense_san: string | null
   terminal_status: Wire<GameStatus> | null
+  exchange?: ExchangeEvidence | null
+  non_obviousness?: NonObviousnessEvidence | null
+  detector_version?: string | null
+  engine_identity?: EngineIdentity | null
+  budgets?: NodeBudgets | null
 }
 
 export interface MatchMove {
@@ -141,6 +196,7 @@ export interface LabSettings {
   max_fullmoves: number
   max_plies: number
   autoplay_delay_ms: number
+  strict_policy?: MatchPolicy
 }
 
 export interface Candidate {

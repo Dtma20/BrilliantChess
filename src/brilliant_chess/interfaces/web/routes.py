@@ -61,8 +61,12 @@ from brilliant_chess.interfaces.web.schemas import (
     StrengthOut,
     analysis_out,
     board_out,
+    engine_identity_out,
     evaluation_text,
+    exchange_out,
     gate_out,
+    node_budgets_out,
+    non_obviousness_out,
     sacrifice_out,
 )
 from brilliant_chess.ports.engine import ChessEngine, PlayableEngine
@@ -145,6 +149,7 @@ def lab_settings(request: Request) -> LabOut:
         max_fullmoves=lab.max_fullmoves,
         max_plies=lab.max_fullmoves * 2,
         autoplay_delay_ms=lab.autoplay_delay_ms,
+        strict_policy=lab.strict_policy,
     )
 
 
@@ -221,7 +226,15 @@ def step_match(
         if not play_match.can_step(board, state):
             raise DomainError("Partida encerrada")
         profile, engine = _profile_and_engine(state, view.position.side_to_move, pair)
-        rules = request.app.state.container.rules
+        is_strict = profile.policy in {
+            play_match.MatchPolicy.STRICT_V1,
+            play_match.MatchPolicy.STRICT_V2,
+        }
+        rules = (
+            request.app.state.container.rule_set_for(profile.policy)
+            if is_strict
+            else request.app.state.container.rules
+        )
         lab = request.app.state.container.settings.web.lab
         choice = (
             choose_brilliant_move(
@@ -233,7 +246,7 @@ def step_match(
                 rules,
                 lab.strict_budget(),
             )
-            if profile.policy is play_match.MatchPolicy.STRICT_V1
+            if is_strict
             else None
         )
         strict_selected = choice.selected if choice is not None else None
@@ -241,7 +254,11 @@ def step_match(
         audit_selected = None
         if choice is not None and choice.move is not None and strict_selected is not None:
             move = choice.move
-            selection = SelectionKind.STRICT_V1
+            selection = (
+                SelectionKind.STRICT_V2
+                if profile.policy is play_match.MatchPolicy.STRICT_V2
+                else SelectionKind.STRICT_V1
+            )
             audit_selected = strict_selected
         elif near_selected is not None:
             move = Move(near_selected.candidate.move_uci, near_selected.candidate.move_san)
@@ -253,7 +270,7 @@ def step_match(
             )
             selection = (
                 SelectionKind.FALLBACK
-                if profile.policy is play_match.MatchPolicy.STRICT_V1
+                if is_strict
                 else SelectionKind.NORMAL
             )
         audit = None if audit_selected is None else _match_audit(audit_selected)
@@ -434,6 +451,16 @@ def _match_audit(audited: CandidateAudit) -> MatchAudit:
         defense_accepted=audited.defense_accepted,
         material_conceded=audited.material_conceded,
         terminal_status=audited.terminal_status,
+        exchange=audited.exchange,
+        non_obviousness=audited.non_obviousness,
+        detector_version=audited.detector_version,
+        engine_identity=audited.engine_identity,
+        discovery_budget=audited.discovery_budget,
+        confirmation_budget=audited.confirmation_budget,
+        best_defense_budget=audited.best_defense_budget,
+        stability_budget=audited.stability_budget,
+        shallow_budget=audited.shallow_budget,
+        shallow_multipv=audited.shallow_multipv,
     )
 
 
@@ -454,4 +481,9 @@ def _audit_out(audit: MatchAudit, uci: str, san: str) -> CandidateAuditOut:
         ),
         best_defense_san=audit.best_defense_san,
         terminal_status=audit.terminal_status,
+        exchange=exchange_out(audit.exchange),
+        non_obviousness=non_obviousness_out(audit.non_obviousness),
+        detector_version=audit.detector_version,
+        engine_identity=engine_identity_out(audit.engine_identity),
+        budgets=node_budgets_out(audit),
     )

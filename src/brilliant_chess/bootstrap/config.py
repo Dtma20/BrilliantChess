@@ -18,6 +18,7 @@ from brilliant_chess.domain.errors import ConfigurationError
 from brilliant_chess.domain.material import MaterialValues
 from brilliant_chess.domain.models import AnalysisBudget
 from brilliant_chess.domain.rule_set import (
+    NonObviousnessThresholds,
     PriorPositionThresholds,
     QualityThresholds,
     ResultingPositionThresholds,
@@ -68,7 +69,10 @@ class SacrificeModel(_Strict):
 
     min_nominal_value: float = Field(default=2.75, gt=0.0)
     min_confidence: float = Field(default=0.70, ge=0.0, le=1.0)
+    min_net_material_concession: float = Field(default=1.0, ge=0.0)
+    equal_trade_tolerance: float = Field(default=0.5, ge=0.0)
     acceptance_search_plies: int = Field(default=4, ge=1)
+    exchange_search_plies: int = Field(default=8, ge=1)
     compensation_horizon_plies: int = Field(default=10, ge=1)
     confidence_weights: ConfidenceWeightsModel = ConfidenceWeightsModel()
 
@@ -96,6 +100,15 @@ class SelectionModel(_Strict):
     uniqueness_equivalence_margin: float = Field(default=0.02, ge=0.0, le=1.0)
 
 
+class NonObviousnessModel(_Strict):
+    shallow_nodes: int = Field(default=5_000, gt=0)
+    shallow_multipv: int = Field(default=5, ge=1)
+    min_expected_points_improvement: float = Field(default=0.03, ge=0.0, le=1.0)
+    max_obvious_shallow_rank: int = Field(default=2, ge=1)
+    max_confirmed_rank: int = Field(default=3, ge=1)
+    min_rank_improvement: int = Field(default=2, ge=1)
+
+
 class MaterialValuesModel(_Strict):
     pawn: float = Field(default=1.0, gt=0.0)
     knight: float = Field(default=3.2, gt=0.0)
@@ -114,6 +127,7 @@ class RulesModel(_Strict):
     robustness: RobustnessModel = RobustnessModel()
     scoring: ScoringModel = ScoringModel()
     selection: SelectionModel = SelectionModel()
+    non_obviousness: NonObviousnessModel = NonObviousnessModel()
     material_values: MaterialValuesModel = MaterialValuesModel()
 
 
@@ -147,12 +161,15 @@ class EngineModel(_Strict):
 class LabModel(_Strict):
     max_fullmoves: int = Field(default=100, ge=1, le=100)
     autoplay_delay_ms: int = Field(default=250, ge=50, le=10_000)
+    strict_policy: str = "strict_v2"
     strict_multipv: int = Field(default=6, ge=1, le=16)
     strict_candidates: int = Field(default=6, ge=1, le=16)
     strict_discovery_nodes: int = Field(default=80_000, gt=0)
     strict_confirmation_nodes: int = Field(default=200_000, gt=0)
     strict_best_defense_nodes: int = Field(default=200_000, gt=0)
     strict_stability_nodes: int = Field(default=400_000, gt=0)
+    strict_shallow_nodes: int = Field(default=5_000, gt=0)
+    strict_shallow_multipv: int = Field(default=5, ge=1, le=16)
 
     def strict_budget(self) -> StrictSearchBudget:
         return StrictSearchBudget(
@@ -162,6 +179,8 @@ class LabModel(_Strict):
             stability=AnalysisBudget(nodes=self.strict_stability_nodes),
             multipv=self.strict_multipv,
             max_candidates=min(self.strict_candidates, self.strict_multipv),
+            shallow=AnalysisBudget(nodes=self.strict_shallow_nodes),
+            shallow_multipv=self.strict_shallow_multipv,
         )
 
 
@@ -238,7 +257,10 @@ def _rule_set_from(rules: RulesModel) -> RuleSet:
         sacrifice=SacrificeThresholds(
             min_nominal_value=rules.sacrifice.min_nominal_value,
             min_confidence=rules.sacrifice.min_confidence,
+            min_net_material_concession=rules.sacrifice.min_net_material_concession,
+            equal_trade_tolerance=rules.sacrifice.equal_trade_tolerance,
             acceptance_search_plies=rules.sacrifice.acceptance_search_plies,
+            exchange_search_plies=rules.sacrifice.exchange_search_plies,
             compensation_horizon_plies=rules.sacrifice.compensation_horizon_plies,
             confidence_weights=SacrificeConfidenceWeights(
                 legal_capture_available=weights.legal_capture_available,
@@ -263,6 +285,14 @@ def _rule_set_from(rules: RulesModel) -> RuleSet:
         selection=SelectionThresholds(
             safe_max_expected_points_loss=rules.selection.safe_max_expected_points_loss,
             uniqueness_equivalence_margin=rules.selection.uniqueness_equivalence_margin,
+        ),
+        non_obviousness=NonObviousnessThresholds(
+            shallow_nodes=rules.non_obviousness.shallow_nodes,
+            shallow_multipv=rules.non_obviousness.shallow_multipv,
+            min_expected_points_improvement=rules.non_obviousness.min_expected_points_improvement,
+            max_obvious_shallow_rank=rules.non_obviousness.max_obvious_shallow_rank,
+            max_confirmed_rank=rules.non_obviousness.max_confirmed_rank,
+            min_rank_improvement=rules.non_obviousness.min_rank_improvement,
         ),
         material_values=MaterialValues(
             pawn=rules.material_values.pawn,
