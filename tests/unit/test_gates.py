@@ -107,6 +107,63 @@ def test_v2_gate_rejects_clean_equal_exchange(rules_v2):
     assert "não satisfaz" in result.explanation
 
 
+def test_v2_gate_rejects_favorable_trade_even_with_large_concession(rules_v2):
+    evidence = SacrificeEvidence(
+        detected=False,
+        exchange=ExchangeEvidence(
+            disposition=ExchangeDisposition.FAVORABLE_TRADE,
+            material_before=0.0,
+            material_immediately_after=-2.0,
+            material_after_best_acceptance=-1.5,
+            material_captured_by_candidate=5.0,
+            material_lost_by_mover=3.0,
+            net_material_concession=2.0,
+            favorable_trade=True,
+        ),
+    )
+    result = gate_sacrifice_v2(evidence, rules_v2.sacrifice)
+    assert result.status is GateStatus.FAILED
+    assert "não satisfaz" in result.explanation
+
+
+def test_v2_gate_rejects_obvious_recapture_beyond_equal_trade_tolerance(rules_v2):
+    evidence = SacrificeEvidence(
+        detected=False,
+        exchange=ExchangeEvidence(
+            disposition=ExchangeDisposition.OBVIOUS_RECAPTURE,
+            material_before=0.0,
+            material_immediately_after=-4.0,
+            material_after_best_acceptance=-1.8,
+            material_captured_by_candidate=5.0,
+            material_lost_by_mover=3.2,
+            net_material_concession=1.8,
+            obvious_recapture=True,
+        ),
+    )
+    result = gate_sacrifice_v2(evidence, rules_v2.sacrifice)
+    assert result.status is GateStatus.FAILED
+    assert "não satisfaz" in result.explanation
+
+
+def test_v2_gate_rejects_temporary_offer_with_complete_evidence(rules_v2):
+    evidence = SacrificeEvidence(
+        detected=False,
+        exchange=ExchangeEvidence(
+            disposition=ExchangeDisposition.TEMPORARY_OFFER,
+            material_before=0.0,
+            material_immediately_after=-5.0,
+            material_after_best_acceptance=-0.2,
+            material_captured_by_candidate=5.0,
+            material_lost_by_mover=5.0,
+            net_material_concession=4.8,
+            temporary_offer=True,
+        ),
+    )
+    result = gate_sacrifice_v2(evidence, rules_v2.sacrifice)
+    assert result.status is GateStatus.FAILED
+    assert "não satisfaz" in result.explanation
+
+
 def test_v2_non_obviousness_accepts_deep_surprise(rules_v2):
     evidence = NonObviousnessEvidence(
         shallow_rank=5,

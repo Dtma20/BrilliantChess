@@ -76,3 +76,86 @@ Self-review summary:
 Concerns / follow-up notes:
 
 - `bootstrap/config.py` was intentionally left unchanged because this task was scoped to pure-domain contracts only. A later task will need to extend validated config/YAML wiring before external strict_v2 configuration can flow through that boundary.
+
+## Fix round 1 — reviewer issues on v2 exchange rejection
+
+Date: 2026-08-14
+
+Reviewer issues addressed:
+
+- High: `gate_sacrifice_v2()` now rejects negative v2 exchange classes beyond clean equal trades, including favorable trades, obvious recaptures, and temporary/recovered offers, by both explicit flags and their corresponding `ExchangeDisposition` values.
+- Medium: added focused rejection tests for favorable trades, obvious recaptures beyond equal-trade tolerance, and temporary offers with complete evidence.
+
+Files changed in fix round:
+
+- `src/brilliant_chess/domain/gates.py`
+- `tests/unit/test_gates.py`
+
+TDD log for fix round:
+
+1. RED: added failing tests:
+   - `test_v2_gate_rejects_favorable_trade_even_with_large_concession`
+   - `test_v2_gate_rejects_obvious_recapture_beyond_equal_trade_tolerance`
+   - `test_v2_gate_rejects_temporary_offer_with_complete_evidence`
+2. RED verification command:
+
+   `uv run pytest tests/unit/test_sacrifice.py tests/unit/test_gates.py tests/unit/test_scoring.py -q`
+
+   Output summary:
+
+   - Exit code: `1`
+   - Result: `...FFF...`
+   - Failures:
+     - `test_v2_gate_rejects_favorable_trade_even_with_large_concession`
+     - `test_v2_gate_rejects_obvious_recapture_beyond_equal_trade_tolerance`
+     - `test_v2_gate_rejects_temporary_offer_with_complete_evidence`
+   - Failure mode: `gate_sacrifice_v2()` returned `GateStatus.PASSED` for all three negative exchange cases.
+
+3. GREEN implementation:
+   - imported `ExchangeDisposition` into `gates.py`
+   - added an explicit negative-disposition set for:
+     - `CLEAN_EQUAL_TRADE`
+     - `FAVORABLE_TRADE`
+     - `OBVIOUS_RECAPTURE`
+     - `TEMPORARY_OFFER`
+   - expanded the rejection predicate to fail on:
+     - `exchange.clean_trade`
+     - `exchange.favorable_trade`
+     - `exchange.obvious_recapture`
+     - `exchange.temporary_offer`
+     - matching negative `ExchangeDisposition`
+     - equal-trade tolerance fallback
+
+4. GREEN verification command:
+
+   `uv run pytest tests/unit/test_sacrifice.py tests/unit/test_gates.py tests/unit/test_scoring.py -q`
+
+   Output summary:
+
+   - Exit code: `0`
+   - Result: `.....................................s...........`
+
+5. Relevant regression verification command:
+
+   `uv run pytest tests/unit/test_choose_brilliant_move.py tests/unit/test_edge_cases.py tests/unit/test_match_pgn.py -q`
+
+   Output summary:
+
+   - Exit code: `0`
+   - Result: `........................................`
+
+6. Fresh pre-completion verification command:
+
+   `uv run pytest tests/unit/test_sacrifice.py tests/unit/test_gates.py tests/unit/test_scoring.py tests/unit/test_choose_brilliant_move.py tests/unit/test_edge_cases.py tests/unit/test_match_pgn.py -q`
+
+   Output summary:
+
+   - Exit code: `0`
+   - Result:
+     - `..................................s..................................... [ 83%]`
+     - `..............                                                           [100%]`
+
+Fix-round notes:
+
+- `strict_v1` behavior remains unchanged.
+- The v2 sacrifice gate still allows genuine exchange-sacrifice acceptance paths because only the explicitly negative/recovered/favorable/obvious classes are rejected before the concession threshold check.

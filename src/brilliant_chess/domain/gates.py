@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from brilliant_chess.domain.exchange import ExchangeDisposition
 from brilliant_chess.domain.non_obviousness import NonObviousnessEvidence
 from brilliant_chess.domain.rule_set import (
     NonObviousnessThresholds,
@@ -112,12 +113,19 @@ def gate_sacrifice(evidence: SacrificeEvidence, thresholds: SacrificeThresholds)
 
 def gate_sacrifice_v2(evidence: SacrificeEvidence, thresholds: SacrificeThresholds) -> GateResult:
     exchange = evidence.exchange
+    negative_dispositions = {
+        ExchangeDisposition.CLEAN_EQUAL_TRADE,
+        ExchangeDisposition.FAVORABLE_TRADE,
+        ExchangeDisposition.OBVIOUS_RECAPTURE,
+        ExchangeDisposition.TEMPORARY_OFFER,
+    }
     if exchange is not None and (
         exchange.clean_trade
-        or (
-            abs(exchange.net_material_concession) <= thresholds.equal_trade_tolerance
-            and exchange.obvious_recapture
-        )
+        or exchange.favorable_trade
+        or exchange.obvious_recapture
+        or exchange.temporary_offer
+        or exchange.disposition in negative_dispositions
+        or abs(exchange.net_material_concession) <= thresholds.equal_trade_tolerance
     ):
         return GateResult(
             gate_id=GateId.SACRIFICE,
@@ -125,7 +133,8 @@ def gate_sacrifice_v2(evidence: SacrificeEvidence, thresholds: SacrificeThreshol
             measured_value=exchange.net_material_concession,
             threshold=thresholds.min_net_material_concession,
             explanation=(
-                "troca limpa de material aproximadamente igual; "
+                f"disposicao={exchange.disposition}: troca limpa de material aproximadamente "
+                "igual, favoravel, recaptura obvia ou oferta temporaria/recuperada; "
                 "não satisfaz o portão de sacrifício"
             ),
         )
