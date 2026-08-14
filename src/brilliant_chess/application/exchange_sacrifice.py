@@ -231,8 +231,10 @@ def _evaluate_trace(
     favorable_trade = material_after_best_acceptance > (
         material_before + thresholds.equal_trade_tolerance
     )
-    obvious_recapture = len(acceptance_moves) == 1 and (
-        acceptance_moves[0].before.position.side_to_move is mover.opponent
+    obvious_recapture = (
+        material_captured_by_candidate > 0.0
+        and len(acceptance_moves) == 1
+        and acceptance_moves[0].before.position.side_to_move is mover.opponent
     )
     temporary_offer = (
         material_captured_by_candidate == 0.0 and material_captured_later_by_mover > 0.0

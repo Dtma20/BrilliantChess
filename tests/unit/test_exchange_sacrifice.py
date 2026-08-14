@@ -7,6 +7,7 @@ import pytest
 from brilliant_chess.adapters.board.service import PythonChessBoardService
 from brilliant_chess.application.exchange_sacrifice import detect_exchange_aware_sacrifice
 from brilliant_chess.domain.exchange import ExchangeDisposition
+from brilliant_chess.domain.gates import gate_sacrifice_v2, gate_soundness
 from brilliant_chess.domain.rule_set import RuleSet
 from brilliant_chess.domain.values import ReasonCode, SacrificeKind
 
@@ -52,6 +53,16 @@ FAVORABLE_TRADE_MOVE = "a1a2"
 # material result ties, so the defender-best line must choose c6d5 first.
 TIED_XRAY_FEN = "7k/8/2p1p3/8/8/8/3Q4/3R2K1 w - - 0 1"
 TIED_XRAY_CANDIDATE = "d2d5"
+
+# Qh7 offers the queen to the king/rook without capturing first. The remaining
+# rook is the material compensation represented by a passing soundness gate.
+COMPENSATED_PIECE_OFFER_FEN = "6kr/8/8/7Q/8/8/8/R5K1 w - - 0 1"
+COMPENSATED_PIECE_OFFER_MOVE = "h5h7"
+
+# The same legal offer without the remaining rook is structurally detectable,
+# but the independent best-defense soundness evidence must reject it.
+UNSOUND_PIECE_OFFER_FEN = "6kr/8/8/7Q/8/8/8/6K1 w - - 0 1"
+UNSOUND_PIECE_OFFER_MOVE = "h5h7"
 
 
 @pytest.fixture
@@ -298,3 +309,46 @@ def test_defender_best_ordering_uses_lexicographically_first_tied_line(board, ru
 
     assert evidence.exchange is not None
     assert evidence.exchange.sequence_uci == ("d2d5", "c6d5", "d1d5", "e6d5")
+
+
+def test_compensated_piece_offer_stays_eligible_only_with_soundness_evidence(board, rules_v2):
+    evidence = detect_exchange_aware_sacrifice(
+        board,
+        COMPENSATED_PIECE_OFFER_FEN,
+        (),
+        COMPENSATED_PIECE_OFFER_MOVE,
+        material_values=rules_v2.material_values,
+        thresholds=rules_v2.sacrifice,
+    )
+
+    assert evidence.detected is True
+    assert evidence.kind is SacrificeKind.DESTINATION_OFFER
+    assert evidence.exchange is not None
+    assert evidence.exchange.material_captured_by_candidate == pytest.approx(0.0)
+    assert evidence.exchange.net_material_concession >= (
+        rules_v2.sacrifice.min_net_material_concession
+    )
+    assert evidence.exchange.obvious_recapture is False
+    assert gate_sacrifice_v2(evidence, rules_v2.sacrifice).passed
+    assert gate_soundness(0.004, rules_v2.quality).passed
+
+
+def test_unsound_piece_offer_is_structural_evidence_but_fails_soundness_gate(board, rules_v2):
+    evidence = detect_exchange_aware_sacrifice(
+        board,
+        UNSOUND_PIECE_OFFER_FEN,
+        (),
+        UNSOUND_PIECE_OFFER_MOVE,
+        material_values=rules_v2.material_values,
+        thresholds=rules_v2.sacrifice,
+    )
+
+    assert evidence.detected is True
+    assert evidence.kind is SacrificeKind.DESTINATION_OFFER
+    assert gate_sacrifice_v2(evidence, rules_v2.sacrifice).passed
+    soundness = gate_soundness(
+        0.25,
+        rules_v2.quality,
+        depends_on_opponent_error=True,
+    )
+    assert soundness.passed is False
