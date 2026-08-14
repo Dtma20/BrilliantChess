@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from brilliant_chess.adapters.board.service import PythonChessBoardService
 from brilliant_chess.application import choose_brilliant_move as selector
 from brilliant_chess.application.analyze_position import Candidate, PositionAnalysis
@@ -11,6 +13,8 @@ from brilliant_chess.application.choose_brilliant_move import (
 )
 from brilliant_chess.domain.gates import GateResult
 from brilliant_chess.domain.models import AnalysisBudget, EngineIdentity, Position
+from brilliant_chess.domain.non_obviousness import NonObviousnessCondition
+from brilliant_chess.domain.rule_set import RuleSet
 from brilliant_chess.domain.sacrifice import NO_SACRIFICE
 from brilliant_chess.domain.scoring import BrilliantDecision, ScoreBreakdown
 from brilliant_chess.domain.values import (
@@ -25,6 +29,8 @@ from tests.fakes.scripted_engine import ScriptedEngine, ScriptKey, evaluation
 POSITION_FEN = "7r/7p/8/7Q/8/8/8/6KR w - - 0 1"
 MATE_IN_ONE_FEN = "5k2/2pQ1rp1/2P5/7p/n1rbb2P/4B3/P4PP1/6K1 w - - 4 37"
 LEFT_HANGING_ROOK_FEN = "r2qkb1r/1p3p1p/5np1/3Ppb2/7Q/p1N2N2/PP2PPPP/1RB1KB1R w Kkq - 2 14"
+REGRESSION_FEN = "r2qkb1r/pp2pppp/2n2n2/1Bpp4/3P4/4Pb1P/PP2PPPP/RN1QK2R w KQkq - 0 8"
+SURPRISE_FEN = LEFT_HANGING_ROOK_FEN
 #: Vaivem de torre e rei que faz a candidata ``b2b1`` completar a tripla
 #: repeticao. Sem historico, nem o tabuleiro nem o motor veem o empate.
 REPETITION_INITIAL_FEN = "7k/8/8/8/8/8/8/1R2Q1K1 b - - 0 1"
@@ -45,6 +51,19 @@ def budget(*, stability: AnalysisBudget | None = STABILITY) -> StrictSearchBudge
         stability=stability,
         multipv=1,
         max_candidates=1,
+    )
+
+
+def v2_budget() -> StrictSearchBudget:
+    return StrictSearchBudget(
+        discovery=DISCOVERY,
+        confirmation=CONFIRMATION,
+        best_defense=BEST_DEFENSE,
+        stability=STABILITY,
+        multipv=3,
+        max_candidates=3,
+        shallow=AnalysisBudget(nodes=5_000),
+        shallow_multipv=5,
     )
 
 
@@ -95,6 +114,65 @@ def test_selects_candidate_when_all_seven_gates_pass(rules):
     assert choice.move.uci == "h5h7"
     assert choice.selected is not None
     assert all(gate.status is GateStatus.PASSED for gate in choice.selected.decision.gates)
+
+
+def test_v2_rejects_bxc6_even_when_the_candidate_is_engine_best():
+    choice = choose_brilliant_move(
+        scripted_engine_for_v2_case("clean_exchange"),
+        PythonChessBoardService(),
+        PositionHistory(REGRESSION_FEN),
+        RuleSet(id="strict_v2"),
+        v2_budget(),
+    )
+
+    audit = next(item for item in choice.candidates if item.candidate.move_uci == "b5c6")
+    assert audit.decision.selectable is False
+    assert audit.decision.rule_set_version == "strict_v2"
+    assert any(
+        gate.gate_id is GateId.SACRIFICE and gate.status is GateStatus.FAILED
+        for gate in audit.decision.gates
+    )
+    assert audit.exchange is not None
+
+
+def test_v2_rejects_move_already_obvious_in_shallow_search():
+    choice = choose_brilliant_move(
+        scripted_engine_for_v2_case("shallow_obvious"),
+        PythonChessBoardService(),
+        PositionHistory(SURPRISE_FEN),
+        RuleSet(id="strict_v2"),
+        v2_budget(),
+    )
+
+    audit = choice.candidates[0]
+    assert audit.non_obviousness is not None
+    assert audit.non_obviousness.passed is False
+    assert audit.decision.score > 80.0
+    assert audit.decision.selectable is False
+
+
+def test_v2_accepts_sound_move_that_improves_only_after_deeper_search():
+    choice = choose_brilliant_move(
+        scripted_engine_for_v2_case("deep_surprise"),
+        PythonChessBoardService(),
+        PositionHistory(SURPRISE_FEN),
+        RuleSet(id="strict_v2"),
+        v2_budget(),
+    )
+
+    assert choice.move is not None
+    assert choice.selected is not None
+    assert choice.selected.non_obviousness.condition is NonObviousnessCondition.EP_IMPROVEMENT
+    assert choice.selected.non_obviousness.shallow_rank == 3
+    assert choice.selected.non_obviousness.deep_rank == 2
+    assert choice.selected.non_obviousness.expected_points_improvement == pytest.approx(
+        0.0573, abs=0.001
+    )
+    assert choice.selected.detector_version == "exchange_aware_v1"
+    assert choice.selected.engine_identity is not None
+    assert choice.selected.engine_identity.name == "ScriptedEngine"
+    assert choice.selected.shallow_budget == AnalysisBudget(nodes=5_000)
+    assert choice.selected.confirmation_budget == CONFIRMATION
 
 
 def test_best_defense_search_accepts_small_cross_search_ep_improvement(rules):
@@ -444,6 +522,56 @@ def test_near_brilliant_prioritizes_objective_quality_over_diagnostic_score(rule
     )
 
     assert choice.near_selected == objectively_best
+
+
+def scripted_engine_for_v2_case(case: str) -> ScriptedEngine:
+    board = PythonChessBoardService()
+    if case == "clean_exchange":
+        position = Position.from_fen(REGRESSION_FEN)
+        candidates = (("b5c6", 40),)
+        shallow = candidates
+        confirmations = candidates
+    elif case == "shallow_obvious":
+        position = Position.from_fen(SURPRISE_FEN)
+        candidates = (("e2e3", 40),)
+        shallow = candidates
+        confirmations = (("e2e3", 50),)
+    elif case == "deep_surprise":
+        position = Position.from_fen(SURPRISE_FEN)
+        candidates = (("h4h6", 45), ("e2e3", 0), ("h4h5", -20))
+        shallow = (("h4h6", 45), ("h4h5", 20), ("e2e3", 0))
+        confirmations = (("h4h6", 45), ("e2e3", 40), ("h4h5", -20))
+    else:
+        raise AssertionError(f"unknown v2 scripted case: {case}")
+
+    script: dict[ScriptKey, tuple] = {
+        ScriptKey(position.fen, (), DISCOVERY.nodes): tuple(
+            evaluation(move, position.side_to_move, centipawns=cp, pv=(move,))
+            for move, cp in candidates
+        ),
+        ScriptKey(position.fen, (), 5_000): tuple(
+            evaluation(move, position.side_to_move, centipawns=cp, pv=(move,))
+            for move, cp in shallow
+        ),
+    }
+    for move, cp in confirmations:
+        after = board.position_after(position.fen, (move,))
+        defense = (
+            "f5b1"
+            if position.fen == SURPRISE_FEN and move == "e2e3"
+            else board.view(after.fen, ()).legal_moves[0].uci
+        )
+        pv = (move, defense)
+        script[ScriptKey(position.fen, (move,), CONFIRMATION.nodes)] = (
+            evaluation(move, position.side_to_move, centipawns=cp, pv=pv),
+        )
+        script[ScriptKey(after.fen, (), BEST_DEFENSE.nodes)] = (
+            evaluation(defense, after.side_to_move, centipawns=-40, pv=(defense,)),
+        )
+        script[ScriptKey(position.fen, (move,), STABILITY.nodes)] = (
+            evaluation(move, position.side_to_move, centipawns=cp, pv=pv, depth=28),
+        )
+    return ScriptedEngine(script=script)
 
 
 def _candidate(move_uci: str, *, expected_points_loss: float = 0.01) -> Candidate:

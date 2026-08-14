@@ -9,6 +9,7 @@ from enum import StrEnum
 class NonObviousnessCondition(StrEnum):
     EP_IMPROVEMENT = "ep_improvement"
     RANK_IMPROVEMENT = "rank_improvement"
+    SHALLOW_OBVIOUSNESS = "shallow_obviousness"
     EP_AND_RANK_IMPROVEMENT = "ep_and_rank_improvement"
 
 
@@ -26,4 +27,3 @@ class NonObviousnessEvidence:
     @property
     def passed(self) -> bool:
         return self.condition is not None
-

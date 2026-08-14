@@ -9,7 +9,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from brilliant_chess.domain.exchange import ExchangeDisposition
-from brilliant_chess.domain.non_obviousness import NonObviousnessEvidence
+from brilliant_chess.domain.non_obviousness import (
+    NonObviousnessCondition,
+    NonObviousnessEvidence,
+)
 from brilliant_chess.domain.rule_set import (
     NonObviousnessThresholds,
     PriorPositionThresholds,
@@ -124,7 +127,10 @@ def gate_sacrifice_v2(evidence: SacrificeEvidence, thresholds: SacrificeThreshol
         exchange.clean_trade
         or exchange.favorable_trade
         or exchange.obvious_recapture
-        or exchange.temporary_offer
+        or (
+            exchange.temporary_offer
+            and exchange.disposition is not ExchangeDisposition.LEFT_HANGING
+        )
         or exchange.disposition in negative_dispositions
         or abs(exchange.net_material_concession) <= thresholds.equal_trade_tolerance
     ):
@@ -135,7 +141,8 @@ def gate_sacrifice_v2(evidence: SacrificeEvidence, thresholds: SacrificeThreshol
             threshold=thresholds.min_net_material_concession,
             explanation=(
                 f"disposicao={exchange.disposition}: troca limpa de material aproximadamente "
-                "igual, favoravel, recaptura obvia, recaptura recusada ou oferta temporaria/recuperada; "
+                "igual, favoravel, recaptura obvia, recaptura recusada ou oferta "
+                "temporaria/recuperada; "
                 "não satisfaz o portão de sacrifício"
             ),
         )
@@ -276,8 +283,10 @@ def gate_non_obviousness(
     if (
         evidence.shallow_nodes is None
         or evidence.shallow_multipv is None
-        or evidence.deep_rank is None
         or evidence.shallow_rank is None
+        or evidence.shallow_expected_points is None
+        or evidence.deep_rank is None
+        or evidence.deep_expected_points is None
         or evidence.expected_points_improvement is None
     ):
         return GateResult(
@@ -287,17 +296,36 @@ def gate_non_obviousness(
             threshold=True,
             explanation="Evidencia de nao obviedade indeterminada",
         )
-    rank_improvement = evidence.shallow_rank - evidence.deep_rank
-    passed = (
+    rank_improvement = (
+        None if evidence.shallow_rank is None else evidence.shallow_rank - evidence.deep_rank
+    )
+    budget_ok = (
         evidence.shallow_nodes >= thresholds.shallow_nodes
         and evidence.shallow_multipv >= thresholds.shallow_multipv
+    )
+    ep_ok = evidence.expected_points_improvement >= thresholds.min_expected_points_improvement
+    rank_ok = (
+        rank_improvement is not None
+        and rank_improvement >= thresholds.min_rank_improvement
+        and evidence.deep_rank <= thresholds.max_confirmed_rank
+    )
+    shallow_escape_ok = (
+        evidence.shallow_rank is not None
         and evidence.shallow_rank > thresholds.max_obvious_shallow_rank
         and evidence.deep_rank <= thresholds.max_confirmed_rank
-        and rank_improvement >= thresholds.min_rank_improvement
-        and evidence.expected_points_improvement
-        >= thresholds.min_expected_points_improvement
-        and evidence.passed
     )
+    condition = evidence.condition
+    condition_ok = (
+        False
+        if condition is None
+        else {
+            NonObviousnessCondition.EP_IMPROVEMENT: ep_ok,
+            NonObviousnessCondition.RANK_IMPROVEMENT: rank_ok,
+            NonObviousnessCondition.SHALLOW_OBVIOUSNESS: shallow_escape_ok,
+            NonObviousnessCondition.EP_AND_RANK_IMPROVEMENT: ep_ok and rank_ok,
+        }[condition]
+    )
+    passed = budget_ok and condition_ok
     return GateResult(
         gate_id=GateId.NON_OBVIOUS,
         status=GateStatus.PASSED if passed else GateStatus.FAILED,
@@ -353,7 +381,7 @@ def evaluate_gates(inputs: GateInputs, rules: RuleSet) -> tuple[GateResult, ...]
     )
     if rules.id != "strict_v2":
         return results
-    return results + (gate_non_obviousness(inputs.non_obviousness, rules.non_obviousness),)
+    return (*results, gate_non_obviousness(inputs.non_obviousness, rules.non_obviousness))
 
 
 def all_gates_passed(results: tuple[GateResult, ...]) -> bool:

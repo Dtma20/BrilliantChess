@@ -1,4 +1,4 @@
-"""Selecao auditavel de jogadas brilhantes sob as regras ``strict_v1``."""
+"""Selecao auditavel de jogadas brilhantes sob regras strict versionadas."""
 
 from __future__ import annotations
 
@@ -10,12 +10,24 @@ from brilliant_chess.application.analyze_position import (
     Candidate,
     analyze_position,
 )
+from brilliant_chess.application.exchange_sacrifice import detect_exchange_aware_sacrifice
 from brilliant_chess.application.sacrifice_detector import detect_sacrifice
 from brilliant_chess.domain.errors import EngineError, InvalidEvaluationError
+from brilliant_chess.domain.exchange import ExchangeEvidence
 from brilliant_chess.domain.expected_points import expected_points_loss
 from brilliant_chess.domain.gates import GateInputs, GateResult, evaluate_gates
 from brilliant_chess.domain.material import material_delta
-from brilliant_chess.domain.models import AnalysisBudget, Move, MoveEvaluation, Position
+from brilliant_chess.domain.models import (
+    AnalysisBudget,
+    EngineIdentity,
+    Move,
+    MoveEvaluation,
+    Position,
+)
+from brilliant_chess.domain.non_obviousness import (
+    NonObviousnessCondition,
+    NonObviousnessEvidence,
+)
 from brilliant_chess.domain.rule_set import RuleSet
 from brilliant_chess.domain.sacrifice import (
     SacrificeEvidence,
@@ -46,6 +58,7 @@ _NEAR_BRILLIANT_SAFETY_GATES = frozenset(
 
 #: Empate vale meio ponto. Isto e regra do jogo, nao estimativa de motor.
 DRAW_EXPECTED_POINTS: Final[float] = 0.5
+EXCHANGE_DETECTOR_VERSION: Final[str] = "exchange_aware_v1"
 
 
 @dataclass(frozen=True)
@@ -73,6 +86,8 @@ class StrictSearchBudget:
     stability: AnalysisBudget | None
     multipv: int
     max_candidates: int
+    shallow: AnalysisBudget | None = None
+    shallow_multipv: int = 5
 
 
 @dataclass(frozen=True)
@@ -91,6 +106,21 @@ class CandidateAudit:
     material_conceded: float = 0.0
     #: Desfecho imediato da candidata, quando ela encerra a partida.
     terminal_status: GameStatus | None = None
+    #: Evidencia de troca, disponivel apenas na auditoria ``strict_v2``.
+    exchange: ExchangeEvidence | None = None
+    #: Evidencia de surpresa rasa/profunda, disponivel apenas em ``strict_v2``.
+    non_obviousness: NonObviousnessEvidence | None = None
+    #: Versao do detector usado para a evidencia de troca.
+    detector_version: str | None = None
+    #: Identidade do motor que produziu a auditoria.
+    engine_identity: EngineIdentity | None = None
+    #: Orcamentos usados em cada estagio da auditoria.
+    discovery_budget: AnalysisBudget | None = None
+    confirmation_budget: AnalysisBudget | None = None
+    best_defense_budget: AnalysisBudget | None = None
+    stability_budget: AnalysisBudget | None = None
+    shallow_budget: AnalysisBudget | None = None
+    shallow_multipv: int | None = None
 
 
 @dataclass(frozen=True)
@@ -111,6 +141,7 @@ class _AuditContext:
     candidates: tuple[Candidate, ...]
     expected_points_before: float
     history: PositionHistory
+    shallow: dict[str, tuple[MoveEvaluation, int]] | None = None
 
 
 @dataclass(frozen=True)
@@ -135,6 +166,7 @@ def choose_brilliant_move(
     """
     position = board.position_after(history.initial_fen, history.moves_uci)
     path = history
+    shallow = _shallow_evidence(engine, position, budget) if rules.id == "strict_v2" else None
     analysis = analyze_position(
         engine,
         board,
@@ -155,6 +187,7 @@ def choose_brilliant_move(
         analysis.candidates,
         analysis.expected_points_before,
         path,
+        shallow,
     )
     audits = tuple(_audit_candidate(context, candidate) for candidate in analysis.candidates)
     eligible = sorted(
@@ -177,6 +210,23 @@ def choose_brilliant_move(
         candidates=tuple(eligible) + rejected,
         near_selected=near_selected,
     )
+
+
+def _shallow_evidence(
+    engine: ChessEngine,
+    position: Position,
+    budget: StrictSearchBudget,
+) -> dict[str, tuple[MoveEvaluation, int]] | None:
+    if budget.shallow is None:
+        return None
+    try:
+        result = engine.analyze(position, budget.shallow, multipv=budget.shallow_multipv)
+    except EngineError:
+        return {}
+    return {
+        item.move_uci: (item, item.multipv_rank or index)
+        for index, item in enumerate(result, start=1)
+    }
 
 
 def _select_near_brilliant(
@@ -212,6 +262,12 @@ def _near_brilliant_safety_gates_passed(audit: CandidateAudit) -> bool:
 
 
 def _audit_candidate(context: _AuditContext, candidate: Candidate) -> CandidateAudit:
+    if context.rules.id == "strict_v2":
+        return _audit_candidate_v2(context, candidate)
+    return _audit_candidate_v1(context, candidate)
+
+
+def _audit_candidate_v1(context: _AuditContext, candidate: Candidate) -> CandidateAudit:
     engine = context.engine
     board = context.board
     position = context.position
@@ -331,6 +387,220 @@ def _audit_candidate(context: _AuditContext, candidate: Candidate) -> CandidateA
         material_conceded=material_conceded,
         terminal_status=terminal_status,
     )
+
+
+def _audit_candidate_v2(context: _AuditContext, candidate: Candidate) -> CandidateAudit:
+    engine = context.engine
+    board = context.board
+    position = context.position
+    rules = context.rules
+    budget = context.budget
+    move = board.normalize_move(position, candidate.move_uci)
+    after = board.view(context.history.initial_fen, (*context.history.moves_uci, move.uci))
+    terminal_status = after.status if after.status.is_finished else None
+    terminal_checkmate = terminal_status is GameStatus.CHECKMATE
+    terminal_draw = terminal_status is not None and not terminal_checkmate
+    if terminal_draw:
+        candidate = _as_immediate_draw(candidate, context.expected_points_before)
+    sacrifice = detect_exchange_aware_sacrifice(
+        board,
+        context.history.initial_fen,
+        context.history.moves_uci,
+        move.uci,
+        material_values=rules.material_values,
+        thresholds=rules.sacrifice,
+    )
+    defense = (
+        None if terminal_status is not None else _first(engine, after.position, budget.best_defense)
+    )
+    best_defense_uci = None if defense is None else defense.move_uci
+    defense_loss = 0.0 if terminal_status is not None else None
+    best_defense_disagrees = False
+    depends_on_opponent_error = False
+    material_conceded = 0.0
+    if defense is not None:
+        defender_points_from_mover_pov = defense.evaluation.flipped().expected_points
+        try:
+            defense_loss = expected_points_loss(
+                candidate.expected_points_after,
+                defender_points_from_mover_pov,
+                tolerance=rules.robustness.max_ep_drift_on_deeper_search,
+            ).value
+        except InvalidEvaluationError:
+            best_defense_disagrees = True
+        depends_on_opponent_error = (
+            len(candidate.pv_uci) < _PV_WITH_REPLY_LENGTH
+            or defense.move_uci != candidate.pv_uci[_OPPONENT_REPLY_INDEX]
+        )
+        if defense.move_uci in sacrifice.acceptance_moves:
+            accepted = board.view(after.position.fen, (defense.move_uci,))
+            material_conceded = max(
+                0.0,
+                -material_delta(
+                    after.snapshot.placement,
+                    accepted.snapshot.placement,
+                    position.side_to_move,
+                    rules.material_values,
+                ),
+            )
+
+    stable = (
+        None
+        if terminal_status is not None or budget.stability is None
+        else _first(engine, position, budget.stability, root_move=move)
+    )
+    drift = None if stable is None else stable.expected_points - candidate.expected_points_after
+    overlap = None if stable is None else candidate_pv_overlap(candidate, stable)
+    sacrifice = _with_measured_signals(
+        sacrifice,
+        _MeasuredEvidence(candidate, best_defense_uci, material_conceded, stable),
+        rules,
+    )
+    non_obviousness = _non_obviousness_evidence(context, candidate, move)
+    engine_identity = _safe_engine_identity(engine)
+    if engine_identity is None:
+        non_obviousness = replace(non_obviousness, condition=None)
+    inputs = GateInputs(
+        is_legal=True,
+        expected_points_before=context.expected_points_before,
+        expected_points_after=candidate.expected_points_after,
+        expected_points_loss=candidate.expected_points_loss,
+        confirmed_rank=candidate.rank,
+        sacrifice=sacrifice,
+        non_obviousness=non_obviousness,
+        expected_points_loss_after_best_defense=defense_loss,
+        depends_on_opponent_error=depends_on_opponent_error,
+        expected_points_drift=drift,
+        pv_overlap_plies=overlap,
+        sacrifice_persisted=sacrifice.signals.persists_under_deeper_search,
+    )
+    equivalent = (
+        sum(
+            other.expected_points_loss <= rules.selection.uniqueness_equivalence_margin
+            for other in context.candidates
+        )
+        - 1
+    )
+    scoring = ScoringInputs(
+        expected_points_loss=candidate.expected_points_loss,
+        sacrifice=sacrifice,
+        net_material_conceded=material_conceded,
+        replies_preserving_evaluation=int(
+            defense_loss is not None and defense_loss <= rules.quality.max_expected_points_loss
+        ),
+        total_legal_replies=max(1, len(after.legal_moves)),
+        forcing_moves_in_pv=int(best_defense_uci in sacrifice.acceptance_moves),
+        pv_length=len(candidate.pv_uci),
+        equivalent_alternatives=equivalent,
+        expected_points_drift=drift,
+        pv_overlap_plies=overlap,
+        sacrifice_persisted=sacrifice.signals.persists_under_deeper_search,
+    )
+    gates = _strict_gates(
+        inputs,
+        rules,
+        has_stability_evidence=stable is not None,
+        best_defense_disagrees=best_defense_disagrees,
+        terminal_status=terminal_status,
+    )
+    return CandidateAudit(
+        candidate=candidate,
+        decision=decide(gates, scoring, rules),
+        best_defense_uci=best_defense_uci,
+        stability_depth=None if stable is None else stable.depth,
+        best_defense_san=_san_of(board, after.position, best_defense_uci),
+        acceptance_san=_each_san(board, after.position, sacrifice.acceptance_moves),
+        defense_accepted=best_defense_uci is not None
+        and best_defense_uci in sacrifice.acceptance_moves,
+        material_conceded=material_conceded,
+        terminal_status=terminal_status,
+        exchange=sacrifice.exchange,
+        non_obviousness=non_obviousness,
+        detector_version=EXCHANGE_DETECTOR_VERSION,
+        engine_identity=engine_identity,
+        discovery_budget=budget.discovery,
+        confirmation_budget=budget.confirmation,
+        best_defense_budget=budget.best_defense,
+        stability_budget=budget.stability,
+        shallow_budget=budget.shallow,
+        shallow_multipv=budget.shallow_multipv if budget.shallow is not None else None,
+    )
+
+
+def _non_obviousness_evidence(
+    context: _AuditContext,
+    candidate: Candidate,
+    move: Move,
+) -> NonObviousnessEvidence:
+    budget = context.budget
+    if budget.shallow is None:
+        return NonObviousnessEvidence()
+    shallow_result = None
+    shallow_rank = None
+    if context.shallow is not None:
+        shallow_entry = context.shallow.get(candidate.move_uci)
+        if shallow_entry is not None:
+            shallow_result, shallow_rank = shallow_entry
+    if shallow_result is None:
+        shallow_result = _first(context.engine, context.position, budget.shallow, root_move=move)
+    if shallow_result is None:
+        return NonObviousnessEvidence(
+            shallow_nodes=budget.shallow.nodes,
+            shallow_multipv=budget.shallow_multipv,
+            deep_rank=candidate.rank,
+            deep_expected_points=candidate.expected_points_after,
+        )
+    improvement = candidate.expected_points_after - shallow_result.expected_points
+    condition = _non_obviousness_condition(
+        shallow_rank,
+        candidate.rank,
+        improvement,
+        context.rules,
+    )
+    return NonObviousnessEvidence(
+        shallow_rank=shallow_rank,
+        deep_rank=candidate.rank,
+        shallow_expected_points=shallow_result.expected_points,
+        deep_expected_points=candidate.expected_points_after,
+        expected_points_improvement=improvement,
+        shallow_nodes=budget.shallow.nodes,
+        shallow_multipv=budget.shallow_multipv,
+        condition=condition,
+    )
+
+
+def _non_obviousness_condition(
+    shallow_rank: int | None,
+    deep_rank: int,
+    improvement: float,
+    rules: RuleSet,
+) -> NonObviousnessCondition | None:
+    thresholds = rules.non_obviousness
+    ep_passes = improvement >= thresholds.min_expected_points_improvement
+    rank_improvement = (
+        shallow_rank is not None and shallow_rank - deep_rank >= thresholds.min_rank_improvement
+    )
+    shallow_escape = (
+        shallow_rank is not None
+        and shallow_rank > thresholds.max_obvious_shallow_rank
+        and deep_rank <= thresholds.max_confirmed_rank
+    )
+    if ep_passes and rank_improvement:
+        return NonObviousnessCondition.EP_AND_RANK_IMPROVEMENT
+    if ep_passes:
+        return NonObviousnessCondition.EP_IMPROVEMENT
+    if rank_improvement:
+        return NonObviousnessCondition.RANK_IMPROVEMENT
+    if shallow_escape:
+        return NonObviousnessCondition.SHALLOW_OBVIOUSNESS
+    return None
+
+
+def _safe_engine_identity(engine: ChessEngine) -> EngineIdentity | None:
+    try:
+        return engine.identity()
+    except (AttributeError, EngineError):
+        return None
 
 
 def _as_immediate_draw(candidate: Candidate, expected_points_before: float) -> Candidate:
