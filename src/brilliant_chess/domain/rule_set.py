@@ -51,11 +51,24 @@ class SacrificeThresholds:
 
     min_nominal_value: float = 2.75
     min_confidence: float = 0.70
+    min_net_material_concession: float = 1.0
+    equal_trade_tolerance: float = 0.5
     acceptance_search_plies: int = 4
+    exchange_search_plies: int = 8
     compensation_horizon_plies: int = 10
     confidence_weights: SacrificeConfidenceWeights = field(
         default_factory=SacrificeConfidenceWeights
     )
+
+
+@dataclass(frozen=True)
+class NonObviousnessThresholds:
+    shallow_nodes: int = 5000
+    shallow_multipv: int = 5
+    min_expected_points_improvement: float = 0.03
+    max_obvious_shallow_rank: int = 2
+    max_confirmed_rank: int = 3
+    min_rank_improvement: int = 2
 
 
 @dataclass(frozen=True)
@@ -106,6 +119,7 @@ class RuleSet:
     )
     prior_position: PriorPositionThresholds = field(default_factory=PriorPositionThresholds)
     sacrifice: SacrificeThresholds = field(default_factory=SacrificeThresholds)
+    non_obviousness: NonObviousnessThresholds = field(default_factory=NonObviousnessThresholds)
     robustness: RobustnessThresholds = field(default_factory=RobustnessThresholds)
     scoring: ScoringWeights = field(default_factory=ScoringWeights)
     selection: SelectionThresholds = field(default_factory=SelectionThresholds)

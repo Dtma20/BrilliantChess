@@ -8,7 +8,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from brilliant_chess.domain.non_obviousness import NonObviousnessEvidence
 from brilliant_chess.domain.rule_set import (
+    NonObviousnessThresholds,
     PriorPositionThresholds,
     QualityThresholds,
     ResultingPositionThresholds,
@@ -45,6 +47,7 @@ class GateInputs:
     expected_points_loss: float
     confirmed_rank: int
     sacrifice: SacrificeEvidence
+    non_obviousness: NonObviousnessEvidence | None = None
     expected_points_loss_after_best_defense: float | None = None
     depends_on_opponent_error: bool = False
     forced_draw_accepted: bool = False
@@ -105,6 +108,41 @@ def gate_sacrifice(evidence: SacrificeEvidence, thresholds: SacrificeThresholds)
             f"confianca={evidence.confidence:.2f} (minima {thresholds.min_confidence:.2f})"
         ),
     )
+
+
+def gate_sacrifice_v2(evidence: SacrificeEvidence, thresholds: SacrificeThresholds) -> GateResult:
+    exchange = evidence.exchange
+    if exchange is not None and (
+        exchange.clean_trade
+        or (
+            abs(exchange.net_material_concession) <= thresholds.equal_trade_tolerance
+            and exchange.obvious_recapture
+        )
+    ):
+        return GateResult(
+            gate_id=GateId.SACRIFICE,
+            status=GateStatus.FAILED,
+            measured_value=exchange.net_material_concession,
+            threshold=thresholds.min_net_material_concession,
+            explanation=(
+                "troca limpa de material aproximadamente igual; "
+                "não satisfaz o portão de sacrifício"
+            ),
+        )
+    if exchange is not None:
+        passed = exchange.net_material_concession >= thresholds.min_net_material_concession
+        return GateResult(
+            gate_id=GateId.SACRIFICE,
+            status=GateStatus.PASSED if passed else GateStatus.FAILED,
+            measured_value=exchange.net_material_concession,
+            threshold=thresholds.min_net_material_concession,
+            explanation=(
+                f"disposicao={exchange.disposition}, concessao liquida="
+                f"{exchange.net_material_concession:.2f} "
+                f"(minima {thresholds.min_net_material_concession:.2f})"
+            ),
+        )
+    return gate_sacrifice(evidence, thresholds)
 
 
 def gate_soundness(
@@ -213,6 +251,55 @@ def gate_stability(
     )
 
 
+def gate_non_obviousness(
+    evidence: NonObviousnessEvidence | None,
+    thresholds: NonObviousnessThresholds,
+) -> GateResult:
+    if evidence is None:
+        return GateResult(
+            gate_id=GateId.NON_OBVIOUS,
+            status=GateStatus.FAILED,
+            measured_value=None,
+            threshold=True,
+            explanation="Evidencia de nao obviedade ausente",
+        )
+    if (
+        evidence.shallow_nodes is None
+        or evidence.shallow_multipv is None
+        or evidence.deep_rank is None
+        or evidence.shallow_rank is None
+        or evidence.expected_points_improvement is None
+    ):
+        return GateResult(
+            gate_id=GateId.NON_OBVIOUS,
+            status=GateStatus.FAILED,
+            measured_value=False,
+            threshold=True,
+            explanation="Evidencia de nao obviedade indeterminada",
+        )
+    rank_improvement = evidence.shallow_rank - evidence.deep_rank
+    passed = (
+        evidence.shallow_nodes >= thresholds.shallow_nodes
+        and evidence.shallow_multipv >= thresholds.shallow_multipv
+        and evidence.shallow_rank > thresholds.max_obvious_shallow_rank
+        and evidence.deep_rank <= thresholds.max_confirmed_rank
+        and rank_improvement >= thresholds.min_rank_improvement
+        and evidence.expected_points_improvement
+        >= thresholds.min_expected_points_improvement
+        and evidence.passed
+    )
+    return GateResult(
+        gate_id=GateId.NON_OBVIOUS,
+        status=GateStatus.PASSED if passed else GateStatus.FAILED,
+        measured_value=rank_improvement,
+        threshold=thresholds.min_rank_improvement,
+        explanation=(
+            f"rank raso={evidence.shallow_rank}, rank profundo={evidence.deep_rank}, "
+            f"ganho_EP={evidence.expected_points_improvement:.4f}"
+        ),
+    )
+
+
 def is_near_threshold(inputs: GateInputs, rules: RuleSet) -> bool:
     """Candidata a menos de uma margem de qualquer limiar continuo."""
     margin = rules.robustness.stability_threshold_margin
@@ -226,10 +313,15 @@ def is_near_threshold(inputs: GateInputs, rules: RuleSet) -> bool:
 
 def evaluate_gates(inputs: GateInputs, rules: RuleSet) -> tuple[GateResult, ...]:
     """Executa os portoes na ordem legalidade -> qualidade -> elegibilidade."""
-    return (
+    sacrifice_result = (
+        gate_sacrifice_v2(inputs.sacrifice, rules.sacrifice)
+        if rules.id == "strict_v2"
+        else gate_sacrifice(inputs.sacrifice, rules.sacrifice)
+    )
+    results = (
         gate_legal(is_legal=inputs.is_legal),
         gate_quality(inputs.expected_points_loss, inputs.confirmed_rank, rules.quality),
-        gate_sacrifice(inputs.sacrifice, rules.sacrifice),
+        sacrifice_result,
         gate_soundness(
             inputs.expected_points_loss_after_best_defense,
             rules.quality,
@@ -249,6 +341,9 @@ def evaluate_gates(inputs: GateInputs, rules: RuleSet) -> tuple[GateResult, ...]
             near_threshold=is_near_threshold(inputs, rules),
         ),
     )
+    if rules.id != "strict_v2":
+        return results
+    return results + (gate_non_obviousness(inputs.non_obviousness, rules.non_obviousness),)
 
 
 def all_gates_passed(results: tuple[GateResult, ...]) -> bool:

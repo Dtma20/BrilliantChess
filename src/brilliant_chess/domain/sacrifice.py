@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from brilliant_chess.domain.exchange import ExchangeEvidence
 from brilliant_chess.domain.errors import DomainError
 from brilliant_chess.domain.material import is_sacrificeable
 from brilliant_chess.domain.rule_set import SacrificeConfidenceWeights
@@ -34,6 +35,7 @@ class SacrificeSignals:
 class SacrificeEvidence:
     detected: bool
     kind: SacrificeKind | None = None
+    exchange: ExchangeEvidence | None = None
     offered_piece_square: str | None = None
     offered_piece_type: PieceType | None = None
     nominal_value: float = 0.0

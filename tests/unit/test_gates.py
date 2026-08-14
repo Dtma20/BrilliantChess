@@ -4,6 +4,7 @@ from dataclasses import replace
 
 import pytest
 
+from brilliant_chess.domain.exchange import ExchangeDisposition, ExchangeEvidence
 from brilliant_chess.domain.gates import (
     GateInputs,
     all_gates_passed,
@@ -12,13 +13,20 @@ from brilliant_chess.domain.gates import (
     gate_legal,
     gate_not_already_won,
     gate_not_bad_after,
+    gate_non_obviousness,
     gate_quality,
     gate_sacrifice,
+    gate_sacrifice_v2,
     gate_soundness,
     gate_stability,
     indeterminate_gates,
     is_near_threshold,
 )
+from brilliant_chess.domain.non_obviousness import (
+    NonObviousnessCondition,
+    NonObviousnessEvidence,
+)
+from brilliant_chess.domain.rule_set import RuleSet
 from brilliant_chess.domain.sacrifice import NO_SACRIFICE, SacrificeEvidence
 from brilliant_chess.domain.values import GateId, GateStatus, PieceType, SacrificeKind
 
@@ -32,6 +40,11 @@ SOUND_SACRIFICE = SacrificeEvidence(
     material_trajectory=(0.0, -5.0, -5.0, 3.3),
     confidence=0.85,
 )
+
+
+@pytest.fixture
+def rules_v2() -> RuleSet:
+    return RuleSet(id="strict_v2")
 
 
 def brilliant_inputs(**overrides) -> GateInputs:
@@ -71,6 +84,41 @@ def test_sacrifice_gate_rejects_low_confidence(rules):
 
 def test_sacrifice_gate_rejects_absent_evidence(rules):
     assert not gate_sacrifice(NO_SACRIFICE, rules.sacrifice).passed
+
+
+def test_v2_gate_rejects_clean_equal_exchange(rules_v2):
+    evidence = SacrificeEvidence(
+        detected=False,
+        exchange=ExchangeEvidence(
+            disposition=ExchangeDisposition.CLEAN_EQUAL_TRADE,
+            material_before=0.0,
+            material_immediately_after=3.2,
+            material_after_best_acceptance=-0.1,
+            material_captured_by_candidate=3.2,
+            material_lost_by_mover=3.3,
+            net_material_concession=0.1,
+            clean_trade=True,
+            obvious_recapture=True,
+        ),
+    )
+    result = gate_sacrifice_v2(evidence, rules_v2.sacrifice)
+    assert result.status is GateStatus.FAILED
+    assert "troca limpa" in result.explanation
+    assert "não satisfaz" in result.explanation
+
+
+def test_v2_non_obviousness_accepts_deep_surprise(rules_v2):
+    evidence = NonObviousnessEvidence(
+        shallow_rank=5,
+        deep_rank=2,
+        shallow_expected_points=0.52,
+        deep_expected_points=0.57,
+        expected_points_improvement=0.05,
+        shallow_nodes=5_000,
+        shallow_multipv=5,
+        condition=NonObviousnessCondition.EP_IMPROVEMENT,
+    )
+    assert gate_non_obviousness(evidence, rules_v2.non_obviousness).passed
 
 
 def test_soundness_is_indeterminate_without_best_defense(rules):
@@ -125,6 +173,13 @@ def test_bad_resulting_position_is_rejected(rules):
     assert GateId.NOT_BAD_AFTER in failed_gates(results)
 
 
+def test_v2_evaluation_appends_non_obvious_gate_and_fails_when_absent(rules_v2):
+    results = evaluate_gates(brilliant_inputs(), rules_v2)
+    assert len(results) == 8
+    assert results[-1].gate_id is GateId.NON_OBVIOUS
+    assert results[-1].status is GateStatus.FAILED
+
+
 def test_near_threshold_detection_uses_configured_margin(rules):
     assert is_near_threshold(brilliant_inputs(expected_points_loss=0.014), rules)
     assert not is_near_threshold(brilliant_inputs(), rules)
@@ -132,5 +187,7 @@ def test_near_threshold_detection_uses_configured_margin(rules):
 
 @pytest.mark.parametrize("gate_id", list(GateId))
 def test_every_gate_id_is_reported_exactly_once(rules, gate_id):
+    if gate_id is GateId.NON_OBVIOUS:
+        pytest.skip("strict_v1 nao inclui o portao v2")
     results = evaluate_gates(brilliant_inputs(), rules)
     assert [result.gate_id for result in results].count(gate_id) == 1

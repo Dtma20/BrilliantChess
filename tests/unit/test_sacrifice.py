@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from brilliant_chess.domain.errors import DomainError
+from brilliant_chess.domain.exchange import ExchangeDisposition, ExchangeEvidence
 from brilliant_chess.domain.sacrifice import (
     NO_SACRIFICE,
     SacrificeEvidence,
@@ -10,7 +11,13 @@ from brilliant_chess.domain.sacrifice import (
     reasons_for,
     sacrifice_confidence,
 )
+from brilliant_chess.domain.rule_set import RuleSet
 from brilliant_chess.domain.values import PieceType, ReasonCode, SacrificeKind
+
+
+@pytest.fixture
+def rules_v2() -> RuleSet:
+    return RuleSet(id="strict_v2")
 
 
 def test_no_evidence_gives_zero_confidence(rules):
@@ -73,3 +80,15 @@ def test_offers_piece_is_false_for_pawn_and_none():
         nominal_value=1.0,
     )
     assert pawn.offers_piece is False
+
+
+def test_v2_exchange_evidence_is_kept_on_sacrifice_object():
+    exchange = ExchangeEvidence(
+        disposition=ExchangeDisposition.TEMPORARY_OFFER,
+        material_before=0.0,
+        material_immediately_after=-3.0,
+        material_after_best_acceptance=-1.0,
+        net_material_concession=2.0,
+    )
+    evidence = SacrificeEvidence(detected=False, exchange=exchange)
+    assert evidence.exchange is exchange

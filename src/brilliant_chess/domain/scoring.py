@@ -111,7 +111,12 @@ def sacrifice_component(
     if not evidence.detected:
         return 0.0
     value_ratio = min(1.0, evidence.nominal_value / SACRIFICE_VALUE_SATURATION)
-    concession_ratio = min(1.0, max(0.0, net_material_conceded) / SACRIFICE_VALUE_SATURATION)
+    concession = (
+        evidence.exchange.net_material_concession
+        if evidence.exchange is not None
+        else net_material_conceded
+    )
+    concession_ratio = min(1.0, max(0.0, concession) / SACRIFICE_VALUE_SATURATION)
     clarity = KIND_CLARITY.get(evidence.kind, 0.9) if evidence.kind is not None else 0.9
     raw = 0.40 * value_ratio + 0.30 * concession_ratio + 0.30 * evidence.confidence
     return rules.scoring.sacrifice * raw * clarity

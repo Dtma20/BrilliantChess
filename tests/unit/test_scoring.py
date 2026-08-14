@@ -5,7 +5,9 @@ from dataclasses import replace
 import pytest
 
 from brilliant_chess.domain.errors import DomainError
-from brilliant_chess.domain.gates import evaluate_gates
+from brilliant_chess.domain.exchange import ExchangeDisposition, ExchangeEvidence
+from brilliant_chess.domain.gates import GateResult, evaluate_gates
+from brilliant_chess.domain.rule_set import RuleSet
 from brilliant_chess.domain.scoring import (
     SCORE_MAX,
     ScoringInputs,
@@ -16,8 +18,14 @@ from brilliant_chess.domain.scoring import (
     score_breakdown,
     uniqueness_component,
 )
-from brilliant_chess.domain.values import PieceType
+from brilliant_chess.domain.sacrifice import SacrificeEvidence
+from brilliant_chess.domain.values import GateId, GateStatus, PieceType
 from tests.unit.test_gates import SOUND_SACRIFICE, brilliant_inputs
+
+
+@pytest.fixture
+def rules_v2() -> RuleSet:
+    return RuleSet(id="strict_v2")
 
 
 def scoring_inputs(**overrides) -> ScoringInputs:
@@ -75,6 +83,22 @@ def test_undetected_sacrifice_scores_zero_in_that_component(rules):
     assert sacrifice_component(undetected, 5.0, rules) == 0.0
 
 
+def test_v2_sacrifice_component_prefers_exchange_net_concession(rules_v2):
+    evidence = replace(
+        SOUND_SACRIFICE,
+        exchange=ExchangeEvidence(
+            disposition=ExchangeDisposition.EXCHANGE_SACRIFICE,
+            material_before=0.0,
+            material_immediately_after=-3.0,
+            material_after_best_acceptance=-1.5,
+            net_material_concession=1.5,
+        ),
+    )
+    assert sacrifice_component(evidence, 5.0, rules_v2) == pytest.approx(
+        sacrifice_component(evidence, 1.5, rules_v2)
+    )
+
+
 def test_uniqueness_decreases_with_equivalent_alternatives(rules):
     values = [uniqueness_component(n, rules) for n in (0, 1, 3, 10)]
     assert values == sorted(values, reverse=True)
@@ -109,3 +133,17 @@ def test_decision_of_a_brilliant_candidate_is_selectable(rules):
     assert decision.selectable is True
     assert decision.rule_set_version == rules.id
     assert len(decision.gates) == len(gates)
+
+
+def test_v2_score_does_not_override_failed_mandatory_gate(rules_v2):
+    inputs = ScoringInputs(
+        expected_points_loss=0.0,
+        sacrifice=SacrificeEvidence(detected=False),
+    )
+    decision = decide(
+        (GateResult(GateId.NON_OBVIOUS, GateStatus.FAILED, False, True, "obvious"),),
+        inputs,
+        rules_v2,
+    )
+    assert decision.selectable is False
+    assert decision.is_brilliant is False
