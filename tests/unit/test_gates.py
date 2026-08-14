@@ -164,6 +164,24 @@ def test_v2_gate_rejects_temporary_offer_with_complete_evidence(rules_v2):
     assert "não satisfaz" in result.explanation
 
 
+def test_v2_gate_rejects_declined_recapture_with_large_concession(rules_v2):
+    evidence = SacrificeEvidence(
+        detected=False,
+        exchange=ExchangeEvidence(
+            disposition=ExchangeDisposition.DECLINED_RECAPTURE,
+            material_before=0.0,
+            material_immediately_after=-3.5,
+            material_after_best_acceptance=-1.4,
+            material_captured_by_candidate=3.5,
+            material_lost_by_mover=5.0,
+            net_material_concession=1.5,
+        ),
+    )
+    result = gate_sacrifice_v2(evidence, rules_v2.sacrifice)
+    assert result.status is GateStatus.FAILED
+    assert "não satisfaz" in result.explanation
+
+
 def test_v2_non_obviousness_accepts_deep_surprise(rules_v2):
     evidence = NonObviousnessEvidence(
         shallow_rank=5,

@@ -117,6 +117,7 @@ def gate_sacrifice_v2(evidence: SacrificeEvidence, thresholds: SacrificeThreshol
         ExchangeDisposition.CLEAN_EQUAL_TRADE,
         ExchangeDisposition.FAVORABLE_TRADE,
         ExchangeDisposition.OBVIOUS_RECAPTURE,
+        ExchangeDisposition.DECLINED_RECAPTURE,
         ExchangeDisposition.TEMPORARY_OFFER,
     }
     if exchange is not None and (
@@ -134,7 +135,7 @@ def gate_sacrifice_v2(evidence: SacrificeEvidence, thresholds: SacrificeThreshol
             threshold=thresholds.min_net_material_concession,
             explanation=(
                 f"disposicao={exchange.disposition}: troca limpa de material aproximadamente "
-                "igual, favoravel, recaptura obvia ou oferta temporaria/recuperada; "
+                "igual, favoravel, recaptura obvia, recaptura recusada ou oferta temporaria/recuperada; "
                 "não satisfaz o portão de sacrifício"
             ),
         )
