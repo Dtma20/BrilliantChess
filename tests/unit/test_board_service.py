@@ -168,3 +168,13 @@ def test_exchange_lines_capture_snapshots_and_removed_piece_without_python_chess
     assert reply.captured_piece is not None
     assert reply.captured_piece.piece_type is PieceType.BISHOP
     assert reply.captured_piece.color is Color.WHITE
+
+
+def test_exchange_lines_always_return_fully_populated_traces(board):
+    traces = board.exchange_lines(REGRESSION_FEN, (), "b5c6", max_plies=4)
+    assert traces
+    for trace in traces:
+        assert trace.root is not None
+        assert trace.after_candidate is not None
+        assert trace.target_square
+        assert trace.candidate is not None

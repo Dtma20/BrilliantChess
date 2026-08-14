@@ -3,7 +3,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import get_type_hints
 
-from brilliant_chess.domain.exchange import ExchangeTrace
+import pytest
+
+from brilliant_chess.domain.exchange import ExchangeDisposition, ExchangeEvidence, ExchangeTrace
 from brilliant_chess.domain.models import AnalysisBudget, EngineIdentity, Move, Position
 from brilliant_chess.domain.values import AnalysisState, Color
 from brilliant_chess.ports.analysis_repository import (
@@ -96,3 +98,15 @@ def test_board_service_declares_typed_exchange_lines_port():
         "max_plies": int,
         "return": tuple[ExchangeTrace, ...],
     }
+
+
+def test_exchange_trace_requires_populated_fields_and_evidence_defaults_to_no_trace():
+    with pytest.raises(TypeError):
+        ExchangeTrace()
+
+    evidence = ExchangeEvidence(
+        disposition=ExchangeDisposition.NONE,
+        material_before=0.0,
+        material_immediately_after=0.0,
+    )
+    assert evidence.trace is None

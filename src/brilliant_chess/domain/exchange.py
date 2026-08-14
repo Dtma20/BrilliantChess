@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 
 from brilliant_chess.domain.material import Piece
@@ -32,11 +32,11 @@ class ExchangePly:
 
 @dataclass(frozen=True)
 class ExchangeTrace:
-    root: PositionSnapshot | None = None
-    after_candidate: PositionSnapshot | None = None
-    target_square: str = ""
-    candidate: Move | None = None
-    acceptance_moves: tuple[ExchangePly, ...] = ()
+    root: PositionSnapshot
+    after_candidate: PositionSnapshot
+    target_square: str
+    candidate: Move
+    acceptance_moves: tuple[ExchangePly, ...]
 
 
 @dataclass(frozen=True)
@@ -52,4 +52,4 @@ class ExchangeEvidence:
     obvious_recapture: bool = False
     temporary_offer: bool = False
     favorable_trade: bool = False
-    trace: ExchangeTrace = field(default_factory=ExchangeTrace)
+    trace: ExchangeTrace | None = None
