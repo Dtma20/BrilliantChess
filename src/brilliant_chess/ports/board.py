@@ -11,6 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
+from brilliant_chess.domain.exchange import ExchangeTrace
 from brilliant_chess.domain.models import Move, Position, PositionSnapshot
 from brilliant_chess.domain.values import GameStatus
 
@@ -40,3 +41,11 @@ class BoardService(Protocol):
         ...
 
     def pv_san(self, position: Position, moves_uci: Sequence[str]) -> tuple[str, ...]: ...
+
+    def exchange_lines(
+        self,
+        initial_fen: str,
+        moves_uci: Sequence[str],
+        candidate_move: str,
+        max_plies: int,
+    ) -> tuple[ExchangeTrace, ...]: ...

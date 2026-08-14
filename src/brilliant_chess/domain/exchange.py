@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from brilliant_chess.domain.material import Piece
+from brilliant_chess.domain.models import Move, PositionSnapshot
+
 
 class ExchangeDisposition(StrEnum):
     NONE = "none"
@@ -21,14 +24,19 @@ class ExchangeDisposition(StrEnum):
 
 @dataclass(frozen=True)
 class ExchangePly:
-    ply: int
-    move_uci: str
-    material_balance: float
+    before: PositionSnapshot
+    move: Move
+    after: PositionSnapshot
+    captured_piece: Piece | None = None
 
 
 @dataclass(frozen=True)
 class ExchangeTrace:
-    plies: tuple[ExchangePly, ...] = ()
+    root: PositionSnapshot | None = None
+    after_candidate: PositionSnapshot | None = None
+    target_square: str = ""
+    candidate: Move | None = None
+    acceptance_moves: tuple[ExchangePly, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -45,4 +53,3 @@ class ExchangeEvidence:
     temporary_offer: bool = False
     favorable_trade: bool = False
     trace: ExchangeTrace = field(default_factory=ExchangeTrace)
-

@@ -6,6 +6,7 @@ from collections.abc import Sequence
 
 import chess
 
+from brilliant_chess.domain.exchange import ExchangePly, ExchangeTrace
 from brilliant_chess.domain.errors import IllegalMoveError, InvalidFenError, InvalidMoveError
 from brilliant_chess.domain.material import Piece
 from brilliant_chess.domain.models import Move, Position, PositionSnapshot
@@ -65,6 +66,39 @@ class PythonChessBoardService:
             board.push(candidate)
         return tuple(san)
 
+    def exchange_lines(
+        self,
+        initial_fen: str,
+        moves_uci: Sequence[str],
+        candidate_move: str,
+        max_plies: int,
+    ) -> tuple[ExchangeTrace, ...]:
+        board = self._board(initial_fen, moves_uci)
+        root = self._snapshot(board, Position.from_fen(board.fen()))
+        candidate = self._parse(board, candidate_move)
+        if not board.is_legal(candidate):
+            return ()
+        normalized_candidate = Move(uci=candidate.uci(), san=board.san(candidate))
+        board.push(candidate)
+        after_candidate = self._snapshot(board, Position.from_fen(board.fen()))
+        acceptance_lines = self._acceptance_lines(
+            board=board,
+            target_square=normalized_candidate.uci[2:4],
+            remaining_plies=max_plies,
+        )
+        if not acceptance_lines:
+            acceptance_lines = ((),)
+        return tuple(
+            ExchangeTrace(
+                root=root,
+                after_candidate=after_candidate,
+                target_square=normalized_candidate.uci[2:4],
+                candidate=normalized_candidate,
+                acceptance_moves=line,
+            )
+            for line in acceptance_lines
+        )
+
     def _board(self, initial_fen: str, moves_uci: Sequence[str]) -> chess.Board:
         return self._board_with_san(initial_fen, moves_uci)[0]
 
@@ -83,6 +117,53 @@ class PythonChessBoardService:
             san.append(board.san(move))
             board.push(move)
         return board, tuple(san)
+
+    def _acceptance_lines(
+        self,
+        *,
+        board: chess.Board,
+        target_square: str,
+        remaining_plies: int,
+    ) -> tuple[tuple[ExchangePly, ...], ...]:
+        if remaining_plies <= 0:
+            return ()
+        target = chess.parse_square(target_square)
+        legal_captures = tuple(
+            sorted(
+                (
+                    move
+                    for move in board.legal_moves
+                    if move.to_square == target and board.is_capture(move)
+                ),
+                key=chess.Move.uci,
+            )
+        )
+        if not legal_captures:
+            return ()
+
+        lines: list[tuple[ExchangePly, ...]] = []
+        for move in legal_captures:
+            before = self._snapshot(board, Position.from_fen(board.fen()))
+            san = board.san(move)
+            board.push(move)
+            after = self._snapshot(board, Position.from_fen(board.fen()))
+            ply = ExchangePly(
+                before=before,
+                move=Move(uci=move.uci(), san=san),
+                after=after,
+                captured_piece=self._captured_piece(before, after, before.position.side_to_move),
+            )
+            tails = self._acceptance_lines(
+                board=board,
+                target_square=target_square,
+                remaining_plies=remaining_plies - 1,
+            )
+            board.pop()
+            if tails:
+                lines.extend((ply, *tail) for tail in tails)
+            else:
+                lines.append((ply,))
+        return tuple(lines)
 
     @staticmethod
     def _parse(board: chess.Board, move: str) -> chess.Move:
@@ -130,3 +211,21 @@ class PythonChessBoardService:
         if board.is_repetition(3):
             return GameStatus.DRAW_THREEFOLD_REPETITION
         return GameStatus.IN_PROGRESS
+
+    @staticmethod
+    def _captured_piece(
+        before: PositionSnapshot,
+        after: PositionSnapshot,
+        mover: Color,
+    ) -> Piece | None:
+        removed = [
+            piece
+            for square, piece in before.placement.items()
+            if piece.color is mover.opponent
+            and (
+                (after_piece := after.placement.get(square)) is None
+                or after_piece.color is mover
+                or after_piece.piece_type is not piece.piece_type
+            )
+        ]
+        return removed[0] if removed else None

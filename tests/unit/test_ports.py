@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import get_type_hints
+
+from brilliant_chess.domain.exchange import ExchangeTrace
 from brilliant_chess.domain.models import AnalysisBudget, EngineIdentity, Move, Position
 from brilliant_chess.domain.values import AnalysisState, Color
 from brilliant_chess.ports.analysis_repository import (
@@ -7,6 +11,7 @@ from brilliant_chess.ports.analysis_repository import (
     StoredAnalysis,
     root_moves_fingerprint,
 )
+from brilliant_chess.ports.board import BoardService
 from brilliant_chess.ports.game_source import Game, GameMove
 from tests.conftest import STARTPOS
 
@@ -80,3 +85,14 @@ def test_game_records_provenance_and_ply_count():
     assert game.ply_count == 1
     assert game.moves[0].position_before.side_to_move is Color.WHITE
     assert game.provenance["file"] == "partida.pgn"
+
+
+def test_board_service_declares_typed_exchange_lines_port():
+    hints = get_type_hints(BoardService.exchange_lines)
+    assert hints == {
+        "initial_fen": str,
+        "moves_uci": Sequence[str],
+        "candidate_move": str,
+        "max_plies": int,
+        "return": tuple[ExchangeTrace, ...],
+    }
