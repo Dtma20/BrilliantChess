@@ -11,7 +11,7 @@
  * Versão de contrato que este cliente conhece. Um valor diferente vindo do
  * servidor não derruba a página: ela avisa e segue desenhando o que entende.
  */
-export const API_SCHEMA_VERSION = "2"
+export const API_SCHEMA_VERSION = "3"
 
 export type Color = "white" | "black"
 
@@ -31,6 +31,17 @@ export type SelectionKind =
   | "strict_v2"
   | "near_brilliant"
   | "fallback"
+  | "opening_exploration"
+
+export type OpeningMode = "off" | "controlled" | "exploratory" | "chaotic"
+
+export type OpeningExitReason =
+  | "planned_exit"
+  | "out_of_book"
+  | "cutoff_exceeded"
+  | "sampling_exhausted"
+
+export type OpeningPhaseType = "suite" | "multipv_sampling" | "ended"
 
 export type GateStatus = "passed" | "failed" | "indeterminate"
 
@@ -163,6 +174,53 @@ export interface CandidateAudit {
   budgets?: NodeBudgets | null
 }
 
+export interface OpeningConfig {
+  mode: Wire<OpeningMode>
+  min_plies?: number
+  max_plies?: number
+  extra_plies?: number
+  max_ep_loss?: number
+  temperature?: number
+  candidate_breadth?: number
+  line_id?: string | null
+  dataset_version?: string
+  seed?: number | null
+}
+
+export interface OpeningIdentity {
+  line_id: string
+  eco: string
+  name: string
+  variation: string | null
+}
+
+export interface OpeningPhase {
+  mode: Wire<OpeningMode>
+  current_phase: Wire<OpeningPhaseType>
+  target_suite_plies: number
+  target_extra_plies: number
+  completed_opening_plies: number
+  active: boolean
+  exit_reason: Wire<OpeningExitReason> | null
+}
+
+export interface OpeningMoveAudit {
+  opening_mode: Wire<OpeningMode>
+  source: string
+  seed: number
+  opening_ply: number
+  planned_exit_ply: number
+  eco: string
+  name: string
+  variation: string | null
+  candidate_rank?: number | null
+  candidate_ep_loss?: number | null
+  sampling_weight?: number | null
+  candidates_considered?: string[]
+  quality_cutoff?: number | null
+  search_budget?: NodeBudgets | null
+}
+
 export interface MatchMove {
   color: Color
   uci: string
@@ -170,6 +228,7 @@ export interface MatchMove {
   selection: Wire<SelectionKind>
   fallback: boolean
   audit: CandidateAudit | null
+  opening_audit?: OpeningMoveAudit | null
 }
 
 export interface MatchProfile {
@@ -189,6 +248,11 @@ export interface Match {
   moves: MatchMove[]
   result_text: string
   can_step: boolean
+  opening?: OpeningConfig | null
+  opening_seed?: number | null
+  opening_identity?: OpeningIdentity | null
+  opening_phase?: OpeningPhase | null
+  opening_dataset_version?: string | null
 }
 
 export interface LabSettings {
@@ -197,6 +261,14 @@ export interface LabSettings {
   max_plies: number
   autoplay_delay_ms: number
   strict_policy?: MatchPolicy
+  opening_mode?: OpeningMode
+  opening_min_plies?: number
+  opening_max_plies?: number
+  opening_extra_plies?: number
+  opening_max_ep_loss?: number
+  opening_temperature?: number
+  opening_candidate_breadth?: number
+  opening_dataset_version?: string
 }
 
 export interface Candidate {
@@ -233,6 +305,12 @@ export interface Analysis {
   arrows: Arrow[]
   warnings: string[]
   board: BoardView
+}
+
+export interface PgnImport {
+  initial_fen: string
+  moves_uci: string[]
+  moves_san: string[]
 }
 
 export interface Health {
@@ -298,10 +376,15 @@ export const api = {
   gamePgnUrl: (gameId: string) => `/api/game/${encodeURIComponent(gameId)}/pgn`,
 
   board: (body: { fen?: string; moves?: string[] }) => post<BoardView>("/api/board", body),
+  importPgn: (pgn: string) => post<PgnImport>("/api/pgn/import", { pgn }),
   analyze: (body: { fen: string; multipv?: number }) => post<Analysis>("/api/analyze", body),
 
-  createMatch: (body: { white: MatchProfileInput; black: MatchProfileInput }) =>
-    post<Match>("/api/match", body),
+  createMatch: (body: {
+    white: MatchProfileInput
+    black: MatchProfileInput
+    initial_fen?: string
+    opening?: { mode?: OpeningMode; line_id?: string | null; seed?: number | null }
+  }) => post<Match>("/api/match", body),
   readMatch: (matchId: string) => request<Match>(`/api/match/${encodeURIComponent(matchId)}`),
   stepMatch: (matchId: string) => post<Match>(`/api/match/${encodeURIComponent(matchId)}/step`),
   matchPgnUrl: (matchId: string) => `/api/match/${encodeURIComponent(matchId)}/pgn`,

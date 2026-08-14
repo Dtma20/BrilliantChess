@@ -75,6 +75,13 @@ export const SELECTION_META: Record<SelectionKind, SelectionMeta> = {
     description: "Stockfish no perfil de força, sem nenhum critério de brilhantismo.",
     tone: "engine",
   },
+  opening_exploration: {
+    mark: "○",
+    label: "opening_exploration",
+    short: "fase de exploração de abertura",
+    description: "Lance selecionado deterministicamente na suíte de abertura ou amostrado via MultiPV.",
+    tone: "engine",
+  },
 }
 
 export const UNKNOWN_SELECTION_META: SelectionMeta = {
@@ -287,4 +294,25 @@ export function selectionCounts(
     totals.set(move.selection, (totals.get(move.selection) ?? 0) + 1)
   }
   return [...totals].map(([kind, total]) => ({ kind, total }))
+}
+
+const OPENING_MODES: Record<string, string> = {
+  exploratory: "Exploratória",
+  controlled: "Controlada",
+  chaotic: "Caótica",
+  off: "Desativada",
+}
+
+export function openingModeLabel(mode: string | undefined): string {
+  return (mode && OPENING_MODES[mode]) || mode || "Exploratória"
+}
+
+const OPENING_PHASES: Record<string, string> = {
+  suite: "Suíte offline",
+  multipv_sampling: "MultiPV amostrado",
+  ended: "Concluída",
+}
+
+export function openingPhaseLabel(phase: string | undefined): string {
+  return (phase && OPENING_PHASES[phase]) || phase || "Em andamento"
 }

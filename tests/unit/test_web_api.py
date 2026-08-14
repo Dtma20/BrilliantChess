@@ -80,12 +80,13 @@ def built_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Te
     yield from build_client(tmp_path)
 
 
-def create_strict_white_match(client: TestClient) -> dict[str, object]:
+def create_strict_white_match(client: TestClient, opening_mode: str = "off") -> dict[str, object]:
     return client.post(
         "/api/match",
         json={
             "white": {"strength_key": "maximo", "policy": "strict_v1"},
             "black": {"strength_key": "iniciante", "policy": "normal"},
+            "opening": {"mode": opening_mode},
         },
     ).json()
 
@@ -110,6 +111,7 @@ def test_create_read_and_step_match(client):
         json={
             "white": {"strength_key": "maximo", "policy": "strict_v1"},
             "black": {"strength_key": "iniciante", "policy": "normal"},
+            "opening": {"mode": "off"},
         },
     ).json()
 
@@ -210,6 +212,7 @@ def test_v2_match_audit_serializes_rejected_exchange_and_provenance(client, monk
         json={
             "white": {"strength_key": "maximo", "policy": "strict_v2"},
             "black": {"strength_key": "iniciante", "policy": "normal"},
+            "opening": {"mode": "off"},
         },
     ).json()
     payload = client.post(f"/api/match/{match['match_id']}/step").json()
@@ -230,6 +233,7 @@ def test_match_steps_normal_white_then_black_with_each_profile_strength(client):
         json={
             "white": {"strength_key": "maximo", "policy": "normal"},
             "black": {"strength_key": "iniciante", "policy": "normal"},
+            "opening": {"mode": "off"},
         },
     ).json()
 
@@ -642,6 +646,27 @@ def test_board_endpoint_applies_moves_and_returns_san(client):
 
 def test_board_endpoint_rejects_bad_fen(client):
     assert client.post("/api/board", json={"fen": "invalida"}).status_code == 400
+
+
+def test_pgn_import_returns_a_navigable_mainline(client):
+    response = client.post(
+        "/api/pgn/import",
+        json={"pgn": '[Event "Teste"]\n\n1. e4 e5 2. Nf3 *\n'},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "initial_fen": STARTING_FEN,
+        "moves_uci": ["e2e4", "e7e5", "g1f3"],
+        "moves_san": ["e4", "e5", "Nf3"],
+    }
+
+
+def test_pgn_import_reports_corrupted_movetext_as_bad_request(client):
+    response = client.post("/api/pgn/import", json={"pgn": "1. e4 e5 2. e5 *"})
+
+    assert response.status_code == 400
+    assert "PGN corrompido" in response.json()["detail"]
 
 
 def test_analysis_returns_ranked_candidates_and_arrows(client):

@@ -6,8 +6,8 @@ from collections.abc import Sequence
 
 import chess
 
-from brilliant_chess.domain.exchange import ExchangePly, ExchangeTrace
 from brilliant_chess.domain.errors import IllegalMoveError, InvalidFenError, InvalidMoveError
+from brilliant_chess.domain.exchange import ExchangePly, ExchangeTrace
 from brilliant_chess.domain.material import Piece
 from brilliant_chess.domain.models import Move, Position, PositionSnapshot
 from brilliant_chess.domain.values import Color, GameStatus, PieceType

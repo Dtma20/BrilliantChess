@@ -27,6 +27,7 @@ import {
   type BoardView,
   type Candidate,
   type Color,
+  type PgnImport,
 } from "@/lib/api"
 import { kingSquare } from "@/lib/chess"
 import { cn } from "@/lib/utils"
@@ -35,11 +36,15 @@ export function AnalysisPage() {
   const [baseFen, setBaseFen] = useState(STARTING_FEN)
   const [moves, setMoves] = useState<string[]>([])
   const [fenDraft, setFenDraft] = useState(STARTING_FEN)
+  const [pgnDraft, setPgnDraft] = useState("")
+  const [importedPgn, setImportedPgn] = useState<PgnImport | null>(null)
+  const [pgnPly, setPgnPly] = useState(0)
   const [view, setView] = useState<BoardView | null>(null)
   const [analysis, setAnalysis] = useState<Analysis | null>(null)
   const [lines, setLines] = useState("5")
   const [autoAnalyze, setAutoAnalyze] = useState(true)
   const [analyzing, setAnalyzing] = useState(false)
+  const [importingPgn, setImportingPgn] = useState(false)
   const [orientation, setOrientation] = useState<Color>("white")
   const [error, setError] = useState("")
   const runId = useRef(0)
@@ -83,12 +88,18 @@ export function AnalysisPage() {
 
   function applyMove(uci: string) {
     const line = [...moves, uci]
+    setImportedPgn(null)
+    setPgnPly(0)
     setMoves(line)
     setAnalysis(null)
     void load(baseFen, line, autoAnalyze)
   }
 
   function goBack() {
+    if (importedPgn) {
+      showPgnPly(pgnPly - 1)
+      return
+    }
     const line = moves.slice(0, -1)
     setMoves(line)
     setAnalysis(null)
@@ -97,10 +108,40 @@ export function AnalysisPage() {
 
   function loadFen(fen: string) {
     const next = fen.trim() || STARTING_FEN
+    setImportedPgn(null)
+    setPgnPly(0)
     setBaseFen(next)
     setMoves([])
     setAnalysis(null)
     void load(next, [], autoAnalyze)
+  }
+
+  function showPgnPly(ply: number) {
+    if (!importedPgn || ply < 1 || ply > importedPgn.moves_uci.length) return
+    const line = importedPgn.moves_uci.slice(0, ply)
+    setPgnPly(ply)
+    setMoves(line)
+    setAnalysis(null)
+    void load(importedPgn.initial_fen, line, autoAnalyze)
+  }
+
+  async function loadPgn() {
+    setImportingPgn(true)
+    setError("")
+    try {
+      const parsed = await api.importPgn(pgnDraft)
+      const firstPly = parsed.moves_uci.slice(0, 1)
+      setBaseFen(parsed.initial_fen)
+      setImportedPgn(parsed)
+      setPgnPly(1)
+      setMoves(firstPly)
+      setAnalysis(null)
+      await load(parsed.initial_fen, firstPly, autoAnalyze)
+    } catch (cause) {
+      setError((cause as Error).message)
+    } finally {
+      setImportingPgn(false)
+    }
   }
 
   const best = analysis?.candidates[0]
@@ -110,7 +151,7 @@ export function AnalysisPage() {
       <section className="grid gap-4">
         <PageHeader
           title="Tabuleiro de análise"
-          lede="Mova as peças ou cole uma FEN. As setas seguem o ranking confirmado, não a ordem bruta do MultiPV."
+          lede="Mova as peças, cole uma FEN ou percorra a linha principal de um PGN. As setas seguem o ranking confirmado."
         />
 
         <div className="mx-auto w-full max-w-[min(100%,calc(100vh-22rem))]">
@@ -147,9 +188,22 @@ export function AnalysisPage() {
             <Button variant="outline" onClick={() => loadFen(STARTING_FEN)}>
               Posição inicial
             </Button>
-            <Button variant="outline" onClick={goBack} disabled={moves.length === 0}>
-              Voltar
+            <Button
+              variant="outline"
+              onClick={goBack}
+              disabled={importedPgn ? pgnPly <= 1 : moves.length === 0}
+            >
+              {importedPgn ? "Anterior" : "Voltar"}
             </Button>
+            {importedPgn && (
+              <Button
+                variant="outline"
+                onClick={() => showPgnPly(pgnPly + 1)}
+                disabled={pgnPly >= importedPgn.moves_uci.length}
+              >
+                Próximo
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={() => setOrientation(orientation === "white" ? "black" : "white")}
@@ -163,6 +217,34 @@ export function AnalysisPage() {
               Copiar FEN
             </Button>
           </div>
+          <Collapsible className="border-t border-border-soft pt-3">
+            <CollapsibleTrigger className="group flex w-full items-center justify-between rounded-sm py-1 text-left text-[0.8rem] font-medium text-ink-2 hover:text-foreground">
+              Importar PGN
+              <ChevronDown
+                aria-hidden
+                className="size-4 text-ink-4 transition-transform group-data-[state=open]:rotate-180"
+              />
+            </CollapsibleTrigger>
+            <CollapsibleContent className="grid gap-2 pt-2 data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down">
+              <Label htmlFor="pgn" className="sr-only">
+                PGN da partida
+              </Label>
+              <textarea
+                id="pgn"
+                value={pgnDraft}
+                spellCheck={false}
+                rows={6}
+                placeholder={'[Event "Partida"]\n\n1. e4 e5 2. Nf3 *'}
+                onChange={(event) => setPgnDraft(event.target.value)}
+                className="w-full resize-y rounded-md border border-input bg-inset px-3 py-2 font-mono text-[0.76rem] leading-relaxed outline-none focus-visible:border-brass"
+              />
+              <div>
+                <Button size="sm" onClick={() => void loadPgn()} disabled={importingPgn}>
+                  {importingPgn ? "Importando…" : "Carregar PGN"}
+                </Button>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
           {error && (
             <Alert variant="destructive">
               <AlertDescription>{error}</AlertDescription>
@@ -293,11 +375,40 @@ export function AnalysisPage() {
 
         <Card className="gap-2 p-5">
           <h2 className="m-0 label-micro">Linha atual</h2>
-          <p className="m-0 font-mono text-[0.8rem] break-words text-ink-3">
-            {view && view.moves_san.length > 0
-              ? view.moves_san.join(" ")
-              : "Mova as peças para explorar variantes."}
-          </p>
+          {importedPgn ? (
+            <>
+              <p className="m-0 font-mono text-[0.8rem] text-ink-2">
+                Lance {pgnPly} de {importedPgn.moves_san.length} · {importedPgn.moves_san[pgnPly - 1]}
+              </p>
+              <div className="flex flex-wrap gap-1" aria-label="Lances do PGN">
+                {importedPgn.moves_san.map((san, index) => {
+                  const ply = index + 1
+                  return (
+                    <button
+                      key={ply}
+                      type="button"
+                      aria-label={`Ir ao lance ${ply}: ${san}`}
+                      aria-current={ply === pgnPly ? "step" : undefined}
+                      onClick={() => showPgnPly(ply)}
+                      className={cn(
+                        "rounded-sm px-1.5 py-1 font-mono text-[0.72rem] text-ink-4 hover:bg-secondary hover:text-foreground",
+                        ply === pgnPly && "bg-brass-wash text-brass",
+                      )}
+                    >
+                      <span className="mr-1 numeric opacity-60">{ply}</span>
+                      {san}
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          ) : (
+            <p className="m-0 font-mono text-[0.8rem] break-words text-ink-3">
+              {view && view.moves_san.length > 0
+                ? view.moves_san.join(" ")
+                : "Mova as peças para explorar variantes."}
+            </p>
+          )}
         </Card>
       </aside>
     </div>

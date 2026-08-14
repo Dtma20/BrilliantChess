@@ -20,14 +20,19 @@ falha em vez de inventar resultado para posicoes desconhecidas.
 
 Nao faca mock de metodos internos: teste contratos observaveis.
 
-## Invariantes verificadas por propriedade
+## Invariantes verificadas por testes
 
 - `EP` sempre em `[0, 1]` para WDL, centipawns e mate;
 - inverter o ponto de vista duas vezes e identidade;
 - `EP_loss` nunca negativa;
 - aumentar `EP_loss` nunca aumenta o componente de qualidade;
 - pontuacao final sempre em `[0, 100]`;
-- candidata em posicao ja ganha nunca e declarada brilhante nem selecionavel.
+- candidata em posicao ja ganha nunca e declarada brilhante nem selecionavel;
+- `strict_v1` avalia exatamente os 7 portoes historicos;
+- `strict_v2` avalia exatamente 8 portoes (acrescentando apenas `GATE_NON_OBVIOUS_001`);
+- trocas limpas de pecas de valor equivalente (bispo/cavalo, torre/torre, dama/dama) falham no portao de sacrifício em `strict_v2`;
+- exploracao de abertura em `controlled`, `exploratory` e `chaotic` e deterministica por semente uint64 e limitada por `max_ep_loss`.
+
 
 ## Golden fixtures
 

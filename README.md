@@ -21,7 +21,8 @@ repositorio.
 
 ## Escopo e honestidade sobre o Chess.com
 
-O padrao implementado se chama `strict_v1`, nao `chess_com_exact`.
+O sistema oferece os perfis `strict_v1` (7 portoes historicos) e `strict_v2` (8
+portoes com avaliacao de trocas e nao obviedade), e nao `chess_com_exact`.
 
 A definicao publica do Chess.com (melhor ou quase melhor, bom sacrificio de
 peca, posicao resultante nao ruim, posicao anterior nao ja ganha, tolerancia
@@ -29,6 +30,7 @@ variando com rating) orienta o desenho. A formula exata e os limiares internos
 do Chess.com **nao sao publicos**. Portanto todos os limiares aqui sao hipoteses
 de engenharia expostas em configuracao, versionadas em cada analise, e
 coincidencia com o Chess.com nunca e apresentada como garantia.
+
 
 Referencia publica: <https://support.chess.com/en/articles/8572705-how-are-moves-classified-what-is-a-blunder-or-brilliant-etc>
 
@@ -95,6 +97,9 @@ Abre em <http://127.0.0.1:8000>:
   tabuleiro e exportar a partida atual em PGN;
 - **/analise** — cole uma FEN ou mova as pecas e veja as melhores jogadas com
   setas coloridas, avaliacao, variantes e a lista de linhas;
+- **/laboratorio** — duelo entre motores com politicas de brilhantismo (`strict_v2`,
+  `strict_v1`, `normal`), exploracao deterministica de aberturas via suite curada e
+  MultiPV amostrado, bancada de auditoria e exportacao de PGN completo;
 - **/docs** — documentacao automatica da API.
 
 O servidor escuta apenas em loopback por padrao. Usar outro endereco imprime um

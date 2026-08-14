@@ -4,6 +4,7 @@ import pytest
 
 from brilliant_chess.domain.errors import DomainError
 from brilliant_chess.domain.exchange import ExchangeDisposition, ExchangeEvidence
+from brilliant_chess.domain.rule_set import RuleSet
 from brilliant_chess.domain.sacrifice import (
     NO_SACRIFICE,
     SacrificeEvidence,
@@ -11,7 +12,6 @@ from brilliant_chess.domain.sacrifice import (
     reasons_for,
     sacrifice_confidence,
 )
-from brilliant_chess.domain.rule_set import RuleSet
 from brilliant_chess.domain.values import PieceType, ReasonCode, SacrificeKind
 
 

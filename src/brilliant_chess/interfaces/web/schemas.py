@@ -10,13 +10,18 @@ from brilliant_chess.domain.exchange import ExchangeEvidence
 from brilliant_chess.domain.gates import GateResult
 from brilliant_chess.domain.models import AnalysisBudget, EngineIdentity
 from brilliant_chess.domain.non_obviousness import NonObviousnessEvidence
+from brilliant_chess.domain.opening import (
+    OpeningConfig,
+    OpeningIdentity,
+    OpeningMoveAudit,
+    OpeningPhaseState,
+)
 from brilliant_chess.domain.sacrifice import SacrificeEvidence
 from brilliant_chess.domain.values import Color, GameStatus, PieceType, SacrificeKind
 from brilliant_chess.ports.board import BoardView
 
-#: Versao 2 acrescenta a evidencia de sacrificio e o desfecho terminal a
-#: auditoria de cada lance do laboratorio.
-API_SCHEMA_VERSION = "2"
+#: Versao 3 acrescenta a exploracao deterministica e auditavel de aberturas.
+API_SCHEMA_VERSION = "3"
 
 
 class _Model(BaseModel):
@@ -40,6 +45,12 @@ class MatchProfileIn(_Model):
     policy: play_match.MatchPolicy = play_match.MatchPolicy.NORMAL
 
 
+class OpeningIn(_Model):
+    mode: str | None = None
+    line_id: str | None = None
+    seed: int | None = None
+
+
 class NewMatchIn(_Model):
     white: MatchProfileIn = MatchProfileIn(
         strength_key="maximo", policy=play_match.MatchPolicy.STRICT_V1
@@ -48,6 +59,7 @@ class NewMatchIn(_Model):
         strength_key="iniciante", policy=play_match.MatchPolicy.NORMAL
     )
     initial_fen: str | None = None
+    opening: OpeningIn | None = None
 
 
 class MoveIn(_Model):
@@ -166,13 +178,65 @@ class CandidateAuditOut(_Model):
     terminal_status: GameStatus | None = None
 
 
+class OpeningConfigOut(_Model):
+    mode: str
+    seed: int | None = None
+    min_fullmove: int
+    max_fullmove: int
+    multipv: int
+    max_ep_loss: float
+    temperature: float
+    extra_plies: int
+    budget_nodes: int
+    experimental: bool = False
+
+
+class OpeningIdentityOut(_Model):
+    line_id: str
+    family: str
+    eco: str
+    name: str
+    variation: str | None = None
+
+
+class OpeningPhaseOut(_Model):
+    active: bool
+    mode: str
+    seed: int
+    planned_exit_ply: int
+    completed_opening_plies: int
+    current_phase: str
+    exit_reason: str | None = None
+    selected_identity: OpeningIdentityOut | None = None
+
+
+class OpeningMoveAuditOut(_Model):
+    opening_mode: str
+    seed: int
+    eco: str
+    name: str
+    variation: str | None = None
+    source: str
+    candidate_rank: int | None = None
+    candidate_ep_loss: float | None = None
+    sampling_weight: float | None = None
+    candidates_considered: list[str] = Field(default_factory=list)
+    quality_cutoff: float | None = None
+    search_budget_nodes: int | None = None
+    opening_ply: int
+    planned_exit_ply: int
+    sampling_mode: str | None = None
+    experimental: bool = False
+
+
 class MatchMoveOut(_Model):
     color: Color
     uci: str
     san: str
     selection: play_match.SelectionKind
     fallback: bool
-    audit: CandidateAuditOut | None
+    audit: CandidateAuditOut | None = None
+    opening_audit: OpeningMoveAuditOut | None = None
 
 
 class LabOut(_Model):
@@ -197,11 +261,26 @@ class MatchOut(_Model):
     moves: list[MatchMoveOut]
     result_text: str
     can_step: bool
+    opening: OpeningConfigOut | None = None
+    opening_seed: int | None = None
+    opening_identity: OpeningIdentityOut | None = None
+    opening_phase: OpeningPhaseOut | None = None
+    opening_dataset_version: str | None = None
 
 
 class BoardIn(_Model):
     fen: str | None = None
     moves: list[str] = Field(default_factory=list)
+
+
+class PgnImportIn(_Model):
+    pgn: str
+
+
+class PgnImportOut(_Model):
+    initial_fen: str
+    moves_uci: list[str]
+    moves_san: list[str]
 
 
 class AnalyzeIn(_Model):
@@ -412,4 +491,71 @@ def analysis_out(
         arrows=arrows,
         warnings=[warning.value for warning in analysis.warnings],
         board=board_out(view),
+    )
+
+
+def opening_config_out(config: OpeningConfig | None) -> OpeningConfigOut | None:
+    if config is None:
+        return None
+    return OpeningConfigOut(
+        mode=config.mode.value,
+        seed=config.seed,
+        min_fullmove=config.min_fullmove,
+        max_fullmove=config.max_fullmove,
+        multipv=config.multipv,
+        max_ep_loss=config.max_ep_loss,
+        temperature=config.temperature,
+        extra_plies=config.extra_plies,
+        budget_nodes=config.budget_nodes,
+        experimental=config.experimental,
+    )
+
+
+def opening_identity_out(identity: OpeningIdentity | None) -> OpeningIdentityOut | None:
+    if identity is None:
+        return None
+    return OpeningIdentityOut(
+        line_id=identity.line_id,
+        family=identity.family,
+        eco=identity.eco,
+        name=identity.name,
+        variation=identity.variation,
+    )
+
+
+def opening_phase_out(phase: OpeningPhaseState | None) -> OpeningPhaseOut | None:
+    if phase is None:
+        return None
+    return OpeningPhaseOut(
+        active=phase.active,
+        mode=phase.mode.value,
+        seed=phase.seed,
+        planned_exit_ply=phase.planned_exit_ply,
+        completed_opening_plies=phase.completed_opening_plies,
+        current_phase=phase.current_phase,
+        exit_reason=None if phase.exit_reason is None else phase.exit_reason.value,
+        selected_identity=opening_identity_out(phase.selected_identity),
+    )
+
+
+def opening_move_audit_out(audit: OpeningMoveAudit | None) -> OpeningMoveAuditOut | None:
+    if audit is None:
+        return None
+    return OpeningMoveAuditOut(
+        opening_mode=audit.opening_mode.value,
+        seed=audit.seed,
+        eco=audit.eco,
+        name=audit.name,
+        variation=audit.variation,
+        source=audit.source,
+        candidate_rank=audit.candidate_rank,
+        candidate_ep_loss=audit.candidate_ep_loss,
+        sampling_weight=audit.sampling_weight,
+        candidates_considered=list(audit.candidates_considered),
+        quality_cutoff=audit.quality_cutoff,
+        search_budget_nodes=None if audit.search_budget is None else audit.search_budget.nodes,
+        opening_ply=audit.opening_ply,
+        planned_exit_ply=audit.planned_exit_ply,
+        sampling_mode=audit.sampling_mode,
+        experimental=audit.experimental,
     )

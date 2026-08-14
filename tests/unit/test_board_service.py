@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 
 from brilliant_chess.adapters.board.service import STARTING_FEN, PythonChessBoardService
-from brilliant_chess.domain.exchange import ExchangePly, ExchangeTrace
 from brilliant_chess.domain.errors import IllegalMoveError, InvalidFenError, InvalidMoveError
+from brilliant_chess.domain.exchange import ExchangePly, ExchangeTrace
 from brilliant_chess.domain.models import Position
 from brilliant_chess.domain.values import Color, GameStatus, PieceType
 

@@ -55,7 +55,25 @@ def build_match_pgn(
         ("White", _match_player_name(state.white)),
         ("Black", _match_player_name(state.black)),
         ("Result", result),
+        ("RuleSetWhite", state.white.policy.value),
+        ("RuleSetBlack", state.black.policy.value),
     ]
+    if state.opening_config is not None:
+        headers.append(("OpeningMode", state.opening_config.mode.value))
+    elif state.opening_phase is not None:
+        headers.append(("OpeningMode", state.opening_phase.mode.value))
+    if state.opening_seed is not None:
+        headers.append(("OpeningSeed", str(state.opening_seed)))
+    if state.opening_identity is not None:
+        headers.append(("ECO", state.opening_identity.eco))
+        headers.append(("Opening", state.opening_identity.name))
+        if state.opening_identity.variation:
+            headers.append(("Variation", state.opening_identity.variation))
+    if state.opening_phase is not None and state.opening_phase.exit_reason is not None:
+        headers.append(("OpeningExitReason", state.opening_phase.exit_reason.value))
+        headers.append(("OpeningExitPly", str(state.opening_phase.completed_opening_plies)))
+    if state.opening_dataset_version:
+        headers.append(("OpeningDatasetVersion", state.opening_dataset_version))
     if initial.position.fen != standard_fen:
         headers.extend((("SetUp", "1"), ("FEN", initial.position.fen)))
     movetext = _movetext_with_comments(
@@ -104,6 +122,36 @@ def _selection_comment(state: play_match.MatchState, move: play_match.MatchMove)
     "zero", por isso nada e preenchido com valor neutro.
     """
     profile = state.white if move.color is Color.WHITE else state.black
+    if move.selection is play_match.SelectionKind.OPENING_EXPLORATION:
+        if move.opening_audit is not None:
+            audit = move.opening_audit
+            fields = [
+                "policy=opening_exploration",
+                "selection=opening_exploration",
+                f"mode={audit.opening_mode.value}",
+                f"source={audit.source}",
+                f"seed={audit.seed}",
+                f"ply={audit.opening_ply}",
+                f"planned_exit={audit.planned_exit_ply}",
+                f"eco={audit.eco}",
+                f"name={audit.name}",
+            ]
+            if audit.variation:
+                fields.append(f"variation={audit.variation}")
+            if audit.candidate_rank is not None:
+                fields.append(f"rank={audit.candidate_rank}")
+            if audit.candidate_ep_loss is not None:
+                fields.append(f"ep_loss={audit.candidate_ep_loss:.4f}")
+            if audit.sampling_weight is not None:
+                fields.append(f"weight={audit.sampling_weight:.4f}")
+            if audit.candidates_considered:
+                fields.append(f"candidates={','.join(audit.candidates_considered)}")
+            if audit.quality_cutoff is not None:
+                fields.append(f"cutoff={audit.quality_cutoff:.4f}")
+            if audit.search_budget and audit.search_budget.nodes is not None:
+                fields.append(f"nodes={audit.search_budget.nodes}")
+            return "{" + " ".join(fields) + "}"
+        return "{policy=opening_exploration selection=opening_exploration}"
     if move.selection is play_match.SelectionKind.NORMAL:
         return "{policy=normal selection=normal}"
     if move.selection is play_match.SelectionKind.FALLBACK:

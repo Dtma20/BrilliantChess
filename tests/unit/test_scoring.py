@@ -8,6 +8,7 @@ from brilliant_chess.domain.errors import DomainError
 from brilliant_chess.domain.exchange import ExchangeDisposition, ExchangeEvidence
 from brilliant_chess.domain.gates import GateResult, evaluate_gates
 from brilliant_chess.domain.rule_set import RuleSet
+from brilliant_chess.domain.sacrifice import SacrificeEvidence
 from brilliant_chess.domain.scoring import (
     SCORE_MAX,
     ScoringInputs,
@@ -18,7 +19,6 @@ from brilliant_chess.domain.scoring import (
     score_breakdown,
     uniqueness_component,
 )
-from brilliant_chess.domain.sacrifice import SacrificeEvidence
 from brilliant_chess.domain.values import GateId, GateStatus, PieceType
 from tests.unit.test_gates import SOUND_SACRIFICE, brilliant_inputs
 

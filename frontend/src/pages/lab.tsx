@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Chessboard } from "@/components/chessboard"
 import {
   AuditDetail,
+  OpeningDetail,
   SelectionLegend,
   SelectionMark,
   SideBadge,
@@ -44,6 +45,7 @@ import {
   type MatchMove,
   type MatchPolicy,
   type MatchProfileInput,
+  type OpeningMode,
   type Strength,
 } from "@/lib/api"
 import { SIDE_NAMES, kingSquare } from "@/lib/chess"
@@ -69,6 +71,7 @@ export function LabPage() {
     strength_key: "iniciante",
     policy: "normal",
   })
+  const [openingMode, setOpeningMode] = useState<OpeningMode>("exploratory")
   const [match, setMatch] = useState<Match | null>(null)
   const [running, setRunning] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -101,6 +104,9 @@ export function LabPage() {
           ...current,
           policy: labDefaultPolicy(lab.strict_policy),
         }))
+        if (lab.opening_mode) {
+          setOpeningMode(lab.opening_mode)
+        }
       })
       .catch((cause: Error) => setError(cause.message))
   }, [])
@@ -157,7 +163,7 @@ export function LabPage() {
     setBusy(true)
     busyRef.current = true
     try {
-      const created = await api.createMatch({ white, black })
+      const created = await api.createMatch({ white, black, opening: { mode: openingMode } })
       positions.current.clear()
       setMatch(created)
       matchRef.current = created
@@ -171,7 +177,7 @@ export function LabPage() {
       setBusy(false)
       busyRef.current = false
     }
-  }, [black, white])
+  }, [black, openingMode, white])
 
   const plies = match?.moves.length ?? 0
   const finished = match !== null && !match.can_step
@@ -358,6 +364,19 @@ export function LabPage() {
           move={move}
           ply={viewedPly}
         />
+
+        {match?.opening_identity && (
+          <div className="flex flex-wrap items-center justify-between gap-1.5 rounded-md border border-border-soft bg-elevated/40 px-3 py-1.5 text-[0.74rem] text-ink-3">
+            <span className="font-mono font-medium text-foreground">
+              {match.opening_identity.eco} · {match.opening_identity.name}
+              {match.opening_identity.variation && ` (${match.opening_identity.variation})`}
+            </span>
+            <span className="font-mono text-ink-4">
+              semente {match.opening_seed ?? "—"} ·{" "}
+              {match.opening_phase?.active ? "fase de abertura" : "abertura concluída"}
+            </span>
+          </div>
+        )}
       </section>
 
       <aside className="grid content-start overflow-hidden rounded-lg border border-border bg-card lg:sticky lg:top-4">
@@ -390,6 +409,26 @@ export function LabPage() {
               locked={match !== null}
             />
           </div>
+
+          <div className="grid grid-cols-[auto_1fr] items-center gap-2 border-t border-border-soft pt-1.5">
+            <span className="text-[0.78rem] font-medium text-ink-3">Abertura</span>
+            <Select
+              value={openingMode}
+              onValueChange={(val) => setOpeningMode(val as OpeningMode)}
+              disabled={match !== null}
+            >
+              <SelectTrigger size="sm" className="h-7 text-[0.76rem]">
+                <SelectValue placeholder="Variedade de abertura" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="exploratory">Exploratória (padrão)</SelectItem>
+                <SelectItem value="controlled">Controlada</SelectItem>
+                <SelectItem value="chaotic">Caótica</SelectItem>
+                <SelectItem value="off">Desativada</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <Drawer title="Como a política estrita decide">
             <p className="m-0 text-[0.78rem] leading-snug text-ink-3">
               <code className="text-ink-2">normal</code> joga a melhor jogada do perfil.{" "}
@@ -402,42 +441,67 @@ export function LabPage() {
         </Register>
 
         <Register title="Comandos">
-          <div className="flex flex-wrap gap-1.5">
-            {/* Pausar precisa funcionar justamente enquanto o motor pensa, então
-                este botão não é desabilitado por `busy`. */}
-            <Button
-              size="sm"
-              onClick={() => void toggle()}
-              disabled={finished || (busy && !match)}
-              className="flex-1"
+          <div className="grid gap-1.5">
+            <div role="group" aria-label="Ação principal do duelo">
+              {/* Pausar precisa funcionar justamente enquanto o motor pensa, então
+                  este botão não é desabilitado por `busy`. */}
+              <Button
+                size="sm"
+                onClick={() => void toggle()}
+                disabled={finished || (busy && !match)}
+                className="w-full"
+              >
+                {running ? "Pausar" : match && plies > 0 ? "Continuar" : "Iniciar duelo"}
+              </Button>
+            </div>
+            <div
+              role="group"
+              aria-label="Comandos auxiliares do duelo"
+              className="grid grid-cols-4 gap-1.5"
             >
-              {running ? "Pausar" : match && plies > 0 ? "Continuar" : "Iniciar duelo"}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void stepOnce()}
-              disabled={busy || running || finished}
-            >
-              Um lance
-            </Button>
-            <Button size="sm" variant="outline" onClick={reset} disabled={busy || !match}>
-              Reiniciar
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                match &&
-                downloadPgn(
-                  api.matchPgnUrl(match.match_id),
-                  `brilliant-chess-lab-${match.match_id}.pgn`,
-                )
-              }
-              disabled={busy || !match || plies === 0}
-            >
-              PGN
-            </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void stepOnce()}
+                disabled={busy || running || finished}
+                className="w-full min-w-0 px-1.5 text-[0.74rem]"
+              >
+                Um lance
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={reset}
+                disabled={busy || !match}
+                className="w-full min-w-0 px-1.5 text-[0.74rem]"
+              >
+                Reiniciar
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  match &&
+                  downloadPgn(
+                    api.matchPgnUrl(match.match_id),
+                    `brilliant-chess-lab-${match.match_id}.pgn`,
+                  )
+                }
+                disabled={busy || !match || plies === 0}
+                className="w-full min-w-0 px-1.5 text-[0.74rem]"
+              >
+                PGN
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => boardView && void navigator.clipboard?.writeText(boardView.fen)}
+                disabled={!boardView}
+                className="w-full min-w-0 px-1.5 text-[0.74rem]"
+              >
+                Copiar FEN
+              </Button>
+            </div>
           </div>
           {error && (
             <Alert variant="destructive">
@@ -459,7 +523,9 @@ export function LabPage() {
           ) : (
             <div className="grid gap-2.5">
               <Verdict match={match} move={move} />
-              {move.audit ? (
+              {move.selection === "opening_exploration" && move.opening_audit ? (
+                <OpeningDetail move={move} />
+              ) : move.audit ? (
                 <AuditDetail audit={move.audit} />
               ) : (
                 <p className="m-0 text-[0.8rem] text-ink-4">
@@ -707,6 +773,8 @@ function Verdict({ match, move }: { match: Match; move: MatchMove }) {
 
   const sentence = () => {
     switch (move.selection) {
+      case "strict_v2":
+        return <>{san} passou pelos oito portões e teve a maior pontuação entre as elegíveis.</>
       case "strict_v1":
         return <>{san} passou pelos sete portões e teve a maior pontuação entre as elegíveis.</>
       case "near_brilliant":
@@ -728,6 +796,12 @@ function Verdict({ match, move }: { match: Match; move: MatchMove }) {
           <>
             {san} veio do Stockfish no perfil {label}. A política <code>normal</code> não aplica
             critério de brilhantismo.
+          </>
+        )
+      case "opening_exploration":
+        return (
+          <>
+            {san} foi jogado durante a exploração de abertura ({move.opening_audit?.name ?? "suíte"}).
           </>
         )
       default:

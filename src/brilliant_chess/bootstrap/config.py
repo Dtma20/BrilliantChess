@@ -17,6 +17,7 @@ from brilliant_chess.application.choose_brilliant_move import StrictSearchBudget
 from brilliant_chess.domain.errors import ConfigurationError
 from brilliant_chess.domain.material import MaterialValues
 from brilliant_chess.domain.models import AnalysisBudget
+from brilliant_chess.domain.opening import OpeningConfig, OpeningMode
 from brilliant_chess.domain.rule_set import (
     NonObviousnessThresholds,
     PriorPositionThresholds,
@@ -158,6 +159,85 @@ class EngineModel(_Strict):
     stability: StabilityModel = StabilityModel()
 
 
+class OpeningModeProfileModel(_Strict):
+    min_fullmove: int = Field(default=4, ge=1, le=50)
+    max_fullmove: int = Field(default=10, ge=1, le=50)
+    multipv: int = Field(default=6, ge=1, le=32)
+    max_ep_loss: float = Field(default=0.08, ge=0.0, le=1.0)
+    temperature: float = Field(default=0.04, ge=0.0)
+    extra_plies: int = Field(default=3, ge=0, le=20)
+    budget_nodes: int = Field(default=5000, gt=0)
+    experimental: bool = False
+
+
+class OpeningLabModel(_Strict):
+    default_mode: OpeningMode = OpeningMode.EXPLORATORY
+    controlled: OpeningModeProfileModel = OpeningModeProfileModel(
+        min_fullmove=6,
+        max_fullmove=10,
+        multipv=4,
+        max_ep_loss=0.02,
+        temperature=0.01,
+        extra_plies=0,
+        budget_nodes=5000,
+        experimental=False,
+    )
+    exploratory: OpeningModeProfileModel = OpeningModeProfileModel(
+        min_fullmove=4,
+        max_fullmove=10,
+        multipv=6,
+        max_ep_loss=0.08,
+        temperature=0.04,
+        extra_plies=3,
+        budget_nodes=5000,
+        experimental=False,
+    )
+    chaotic: OpeningModeProfileModel = OpeningModeProfileModel(
+        min_fullmove=2,
+        max_fullmove=8,
+        multipv=8,
+        max_ep_loss=0.18,
+        temperature=0.10,
+        extra_plies=4,
+        budget_nodes=5000,
+        experimental=True,
+    )
+
+    def for_mode(self, mode: OpeningMode, seed: int | None = None) -> OpeningConfig:
+        if mode is OpeningMode.OFF:
+            return OpeningConfig(
+                mode=OpeningMode.OFF,
+                seed=seed,
+                min_fullmove=0,
+                max_fullmove=0,
+                multipv=1,
+                max_ep_loss=0.0,
+                temperature=0.0,
+                extra_plies=0,
+                budget_nodes=5000,
+                experimental=False,
+            )
+        profile = (
+            self.controlled
+            if mode is OpeningMode.CONTROLLED
+            else self.exploratory
+            if mode is OpeningMode.EXPLORATORY
+            else self.chaotic
+        )
+        return OpeningConfig(
+            mode=mode,
+            seed=seed,
+            min_fullmove=profile.min_fullmove,
+            max_fullmove=profile.max_fullmove,
+            multipv=profile.multipv,
+            max_ep_loss=profile.max_ep_loss,
+            temperature=profile.temperature,
+            extra_plies=profile.extra_plies,
+            budget_nodes=profile.budget_nodes,
+            experimental=profile.experimental,
+        )
+
+
 class LabModel(_Strict):
     max_fullmoves: int = Field(default=100, ge=1, le=100)
     autoplay_delay_ms: int = Field(default=250, ge=50, le=10_000)
@@ -170,6 +250,7 @@ class LabModel(_Strict):
     strict_stability_nodes: int = Field(default=400_000, gt=0)
     strict_shallow_nodes: int = Field(default=5_000, gt=0)
     strict_shallow_multipv: int = Field(default=5, ge=1, le=16)
+    opening: OpeningLabModel = OpeningLabModel()
 
     def strict_budget(self) -> StrictSearchBudget:
         return StrictSearchBudget(

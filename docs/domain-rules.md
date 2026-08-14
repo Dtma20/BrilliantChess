@@ -1,11 +1,23 @@
-# Regras do dominio — `strict_v1`
+# Regras do dominio — `strict_v1` e `strict_v2`
 
 Especificacao normativa. Toda mudanca de regra passa por este arquivo, pela
 configuracao, pelos testes do portao e, se alterar a definicao de brilhante, por
 uma ADR.
 
-Os limiares abaixo sao **hipoteses de engenharia** para iniciar calibracao. Eles
-nao sao os limiares proprietarios do Chess.com.
+Os limiares abaixo sao **hipoteses de engenharia** para calibracao local. Eles
+**nao sao** os limiares proprietarios do Chess.com e este classificador nao e
+equivalente ao Game Review do Chess.com.
+
+## Identificadores e compatibilidade
+
+| Identificador | Portoes | Detector de sacrificio | Nao obviedade | Estado |
+| --- | --- | --- | --- | --- |
+| `strict_v1` | 7 portoes | `DESTINATION_OFFER` e `LEFT_HANGING` (valor nominal) | Nao possui | Historico (imutavel) |
+| `strict_v2` | 8 portoes | Troca-aware (`net_material_concession`, rejeicao de trocas limpas) | `GATE_NON_OBVIOUS_001` (busca rasa vs profunda) | Padrao do laboratorio |
+
+`strict_v1` mantem seu comportamento e auditorias originais intocados.
+`strict_v2` e o classificador padrao do laboratorio de duelos e elimina falsos
+positivos em trocas de pecas menores.
 
 ## Pontos esperados
 
@@ -25,17 +37,17 @@ nao sao os limiares proprietarios do Chess.com.
 
 ## Portoes obrigatorios
 
-Uma candidata so e brilhante se **todos** os portoes retornarem `passed`.
-`indeterminate` nao aprova.
+Uma candidata so e brilhante se **todos** os portoes obrigatorios retornarem
+`passed`. `indeterminate` ou `failed` nao aprovam.
 
-### `GATE_LEGAL_001` — jogada legal
+### `GATE_LEGAL_001` — jogada legal (v1 e v2)
 
 - Entrada: posicao e jogada.
 - Saida: aprovado se a jogada e legal.
 - Limiar: nao configuravel.
 - Testes: `test_illegal_move_fails_the_first_gate`.
 
-### `GATE_QUALITY_001` — melhor ou quase melhor
+### `GATE_QUALITY_001` — melhor ou quase melhor (v1 e v2)
 
 - Entrada: `EP_loss` da candidata e rank apos **confirmacao individual**.
 - Aprovado se `EP_loss <= quality.max_expected_points_loss` **e**
@@ -49,19 +61,30 @@ Uma candidata so e brilhante se **todos** os portoes retornarem `passed`.
 
 ### `GATE_SACRIFICE_001` — sacrificio real de peca
 
-- Entrada: `SacrificeEvidence`.
-- Aprovado se detectado, a peca oferecida e cavalo, bispo, torre ou dama,
-  `nominal_value >= sacrifice.min_nominal_value` e
-  `confidence >= sacrifice.min_confidence`.
-- Limiares: `2.75` e `0.70`.
-- Peao sozinho nao satisfaz o portao em `strict_v1`. Promocoes e subpromocoes
-  ganharao regra propria depois.
-- Exemplo negativo: oferta de peao; evidencia com confianca `0.2`.
-- Testes: `test_sacrifice_gate_rejects_pawn_only_offer`,
-  `test_sacrifice_gate_rejects_low_confidence`,
-  `test_sacrifice_gate_rejects_absent_evidence`.
+#### Em `strict_v1` (`gate_sacrifice`)
 
-### `GATE_SOUNDNESS_001` — sacrificio correto
+- Entrada: `SacrificeEvidence`.
+- Aprovado se detectado, peca oferecida e cavalo, bispo, torre ou dama,
+  `nominal_value >= sacrifice.min_nominal_value` (`2.75`) e
+  `confidence >= sacrifice.min_confidence` (`0.70`).
+- Peao sozinho nao satisfaz o portao.
+
+#### Em `strict_v2` (`gate_sacrifice_v2`)
+
+- Entrada: `SacrificeEvidence` com `ExchangeEvidence`.
+- Aprovado se ha concessao liquida real:
+  `net_material_concession >= sacrifice.min_net_material_concession` (`1.0`),
+  sem disposicoes negativas de troca (`CLEAN_EQUAL_TRADE`, `FAVORABLE_TRADE`,
+  `OBVIOUS_RECAPTURE`, `TEMPORARY_OFFER` ou `DECLINED_RECAPTURE`).
+- **Rejeicao de trocas limpas (Regressao Portuguesa):** Na linha `Bxc6+ bxc6`,
+  o bispo capturou um cavalo (`3.2`) e foi recapturado (`3.3`). A concessao liquida
+  (`0.1`) e inferior a `1.0` e a disposicao e `CLEAN_EQUAL_TRADE`. A explicacao
+  emitida e:
+  > *A sequência é uma troca limpa de material aproximadamente igual e, portanto, não satisfaz o portão de sacrifício.*
+- Trocas equivalentes de torre ou dama e recapturas obvias sao analogamente
+  rejeitadas.
+
+### `GATE_SOUNDNESS_001` — sacrificio correto (v1 e v2)
 
 - Entrada: `EP_loss` apos a **melhor defesa** e a marca
   `depends_on_opponent_error`.
@@ -71,20 +94,20 @@ Uma candidata so e brilhante se **todos** os portoes retornarem `passed`.
 - Testes: `test_soundness_is_indeterminate_without_best_defense`,
   `test_soundness_rejects_lines_that_need_an_opponent_error`.
 
-### `GATE_NOT_BAD_AFTER_001` — posicao resultante nao ruim
+### `GATE_NOT_BAD_AFTER_001` — posicao resultante nao ruim (v1 e v2)
 
 - Aprovado se `EP_apos >= resulting_position.min_expected_points_after`
   (`0.45`) ou se ha empate forcado comprovado e aceito pela configuracao.
 - Testes: `test_not_bad_after_accepts_forced_draw_when_configured`.
 
-### `GATE_NOT_ALREADY_WON_001` — posicao anterior nao completamente ganha
+### `GATE_NOT_ALREADY_WON_001` — posicao anterior nao completamente ganha (v1 e v2)
 
 - Aprovado se `EP_antes < prior_position.max_expected_points_before` (`0.95`).
 - Usa o score da posicao **anterior**, nunca o posterior.
 - Testes: `test_not_already_won_uses_the_prior_position`,
   `test_already_winning_position_is_never_declared_brilliant` (propriedade).
 
-### `GATE_STABILITY_001` — analise estavel
+### `GATE_STABILITY_001` — analise estavel (v1 e v2)
 
 - Entrada: drift de EP entre estagios, sobreposicao inicial das PVs e
   persistencia do mecanismo do sacrificio.
@@ -97,91 +120,30 @@ Uma candidata so e brilhante se **todos** os portoes retornarem `passed`.
 - Testes: `test_stability_without_budget_is_indeterminate_only_near_a_threshold`,
   `test_stability_fails_on_drift_or_refuted_mechanism`.
 
-### Comparacao com a melhor defesa
+### `GATE_NON_OBVIOUS_001` — nao obviedade (exclusivo `strict_v2`)
 
-O EP da candidata confirmada e o EP apos a melhor defesa vem de buscas
-independentes, com raizes diferentes. Ao calcular a perda apos a melhor defesa,
-`strict_v1` aceita uma melhoria negativa dentro de
-`robustness.max_ep_drift_on_deeper_search` e a normaliza para zero. A margem
-nao vale para o ranking dentro da mesma confirmacao, que continua usando a
-tolerancia numerica global de `1e-6` e acusa inversoes reais de ordem.
-Se a divergencia exceder essa margem, a candidata fica `indeterminate` em
-`GATE_SOUNDNESS_001` e nao e selecionada; o laboratorio usa o fallback normal
-em vez de interromper a partida.
+- Entrada: `NonObviousnessEvidence`.
+- Compara busca rasa (**5.000 nos**, **MultiPV 5**) com a confirmacao profunda.
+- Aprovado se pelo menos uma condicao de surpresa for satisfeita (**semantica OU**):
+  1. `EP_IMPROVEMENT`: `deep_expected_points - shallow_expected_points >= min_expected_points_improvement` (`0.03`);
+  2. `RANK_IMPROVEMENT`: `shallow_rank - deep_rank >= min_rank_improvement` (`2`);
+  3. `DEEP_SURPRISE`: `shallow_rank > max_obvious_shallow_rank` (`2`) e `deep_rank <= max_confirmed_rank` (`3`).
+- Sem evidencia rasa valida ou se o motor falhar, o portao retorna `failed`.
+- Testes: `test_v2_non_obviousness_accepts_deep_surprise`.
 
-## Deteccao de sacrificio
+## Deteccao de sacrificio e trocas
 
 Valores materiais padrao: peao `1.0`, cavalo `3.2`, bispo `3.3`, torre `5.0`,
-dama `9.0`. O rei nao tem valor mensuravel. Esses valores detectam concessao
-material; a correcao da jogada vem sempre do motor.
+dama `9.0`. O rei nao tem valor mensuravel.
 
-Tipos previstos (`SacrificeKind`): `DESTINATION_OFFER` e `LEFT_HANGING`
-(implementados), `EXCHANGE_SACRIFICE`, `DECLINED_RECAPTURE` e
-`CLEARANCE_OR_DEFLECTION` (segunda entrega do detector).
-
-### `DESTINATION_OFFER` — oferta na casa de destino
-
-A candidata leva uma peca nao-peao para uma casa que o adversario pode capturar
-legalmente. A oferta esta **na casa de destino** do lance.
-
-### `LEFT_HANGING` — peca deixada pendurada
-
-A candidata deixa capturavel uma peca nao-peao do proprio lado que **nao esta na
-casa de destino**. Dois casos contam:
-
-- peca exposta pela candidata, por exemplo quando o lance retira o defensor;
-- peca que **ja estava sob ataque** antes da candidata, quando a candidata
-  escolhe nao salva-la nem defende-la. Nao salvar e uma decisao, e e ela que a
-  evidencia registra.
-
-A casa de destino pertence exclusivamente a `DESTINATION_OFFER`, entao os dois
-tipos nao se sobrepoem e nenhuma peca e contada duas vezes. Quando os dois
-aparecem no mesmo lance, `DESTINATION_OFFER` vence: peca posta na casa de
-destino e a oferta mais direta e e a que o adversario responde imediatamente.
-
-Evidencia registrada: casa oferecida, tipo da peca, valor nominal, todas as
-capturas legais que aceitam a oferta, se a melhor defesa medida aceitou e quanto
-material foi concedido nessa linha.
-
-Escolha determinista quando ha mais de uma peca pendurada:
-
-1. maior valor nominal;
-2. menor UCI de aceitacao;
-3. ordem da casa.
-
-Regras contra falso positivo, todas por construcao: apenas **lances legais** do
-adversario contam como aceitacao, o que descarta diagonal ou coluna bloqueada,
-peca cravada que nao pode capturar e ataque impedido por xeque em curso. Peao e
-rei nunca sao a peca oferecida. Peca pendurada, por si, nao e brilhantismo: se
-aceitar deixa quem jogou objetivamente pior sem compensacao medida,
-`GATE_SOUNDNESS_001` reprova. Compensacao nunca e presumida — ela vem da melhor
-defesa, da trajetoria material, da PV e da estabilidade.
-
-Exemplo canonico (`test_detects_the_rook_left_hanging_on_b1_after_e3`): apos
-`14.e3` na linha `1.Nf3 d5 2.c4 c6 3.cxd5 Nf6 4.dxc6 Nxc6 5.d4 g6 6.Nc3 Bg4
-7.d5 Nb4 8.Qa4+ Bd7 9.Qxb4 a5 10.Qb3 a4 11.Qb4 e5 12.Qh4 a3 13.Rb1 Bf5`, a
-torre de b1 e capturavel por `...Bxb1` pela diagonal `f5-e4-d3-c2-b1`. O destino
-`e3` contem um peao, entao so `LEFT_HANGING` ve a oferta.
-
-Confianca (`sacrifice_confidence`), pesos configuraveis, cada evidencia contando
-uma unica vez:
-
-| Evidencia | Peso |
-| --- | --- |
-| Captura legal clara da peca oferecida | 0.35 |
-| Perda material liquida minima na linha de aceitacao | 0.20 |
-| Motor inclui a aceitacao entre respostas plausiveis | 0.15 |
-| Mecanismo tatico verificavel na PV | 0.15 |
-| Padrao persiste em analise mais profunda | 0.15 |
-
-`persists_under_deeper_search = None` significa "estagio nao executado" e nao
-contribui. Confianca nunca substitui portao.
-
-Nao sao sacrificio valido: captura protegida que ganha material; troca
-equivalente; peca ja inevitavelmente perdida; linha que so funciona apos erro
-adversario; jogada que perde material e piora a posicao; oferta em posicao ja
-trivialmente ganha; pseudo-sacrificio por erro de contagem em en passant,
-promocao ou roque.
+Em `strict_v2`, `BoardService.exchange_lines` extrai a arvore deterministica de
+recapturas legais na casa de destino (incluindo x-rays) e calcula:
+- `net_material_concession`: diferenca entre perdas do lado que jogou e todas as
+  capturas adversarias na linha;
+- Tolerancia para trocas equivalentes (`equal_trade_tolerance = 0.5`);
+- Disposicoes tipadas: `CLEAN_EQUAL_TRADE`, `FAVORABLE_TRADE`, `OBVIOUS_RECAPTURE`,
+  `TEMPORARY_OFFER`, `DECLINED_RECAPTURE`, `DESTINATION_OFFER`, `LEFT_HANGING`,
+  `EXCHANGE_SACRIFICE`, `CLEARANCE_OR_DEFLECTION`.
 
 ## Pontuacao (0 a 100)
 
@@ -196,70 +158,35 @@ diagnostica com `selectable = False`.
 | Unicidade | 10 | `10 / (1 + alternativas equivalentes)` |
 | Robustez | 10 | `0.40 * drift + 0.30 * sobreposicao + 0.30 * persistencia` |
 
-O valor do sacrificio satura em `5.0` (torre). Uma dama oferecida nao vence
-automaticamente uma torre oferecida: evidencia sem valor nao pontua.
-
 ## Selecao
 
 Camadas, nesta ordem:
 
-1. candidatas com `is_brilliant = True`;
+1. candidatas com `is_brilliant = True` (todos os portoes obrigatorios aprovados);
 2. `near_brilliant`: candidata auditada com `EP_loss <=
    selection.safe_max_expected_points_loss` (`0.03`) e com os portoes de
-   legalidade, solidez contra a melhor defesa, posicao resultante e estabilidade
-   aprovados;
-3. melhor jogada objetiva.
-
-Uma `near_brilliant` pode falhar nos criterios de classificacao (por exemplo,
-na exigencia de sacrificio), mas nunca nos criterios de seguranca. Ela e marcada
-como `selection=near_brilliant` no retorno da API e no PGN, sem receber o rotulo
-de brilhante. Dentro dessa camada, os desempates sao menor `EP_loss`, mate
-vencedor mais curto, maior score diagnostico e ordem UCI estavel. O score nunca
-supera uma alternativa objetivamente melhor.
-
-Quando a jogada candidata produz xeque-mate confirmado pelas regras do
-tabuleiro, `GATE_SOUNDNESS_001` e `GATE_STABILITY_001` sao aprovados: nao existe
-defesa legal nem PV adicional para comparar. A primeira camada nunca e relaxada
-para forcar um sacrificio.
+   seguranca aprovados;
+3. melhor jogada objetiva (fallback normal do perfil).
 
 ## Desfechos imediatos
 
-O seletor recebe o caminho ate a posicao (`PositionHistory`: FEN inicial mais os
-lances) e deriva dele a posicao raiz. Repeticao e a regra dos cinquenta lances
-nao estao na FEN; sem o caminho, nem o `BoardService` nem o motor as veem.
+Em xeque-mate ou empate terminal (afogamento, material insuficiente, 50 lances,
+tripla repeticao):
+- Empate vale `EP = 0.5` por regra do tabuleiro;
+- `EP_loss = max(0, EP_antes - 0.5)`;
+- Solidez e estabilidade sao aprovadas com explicacao canonica de desfecho sem
+  chamar o motor.
 
-### Mate
+## Exploracao de abertura
 
-Ver acima: solidez e estabilidade aprovadas com explicacao propria.
+A fase de abertura no laboratorio de duelo suporta 4 modos operacionais:
+- `EXPLORATORY`: combinacao de linhas da suite com transicoes amostradas via MultiPV;
+- `CONTROLLED`: adesao estrita as linhas da suite;
+- `CHAOTIC`: alta entropia com maior tolerancia de corte e temperatura;
+- `OFF`: duelo inicia na posicao inicial sob politica de jogo regular.
 
-### Empate
-
-Se a candidata encerra a partida em empate — afogamento, material insuficiente,
-cinquenta lances ou tripla repeticao —, valem tres regras:
-
-1. `EP_apos = 0.5`. E regra do jogo, nao estimativa de motor. O score que o
-   Stockfish devolveu para a posicao e descartado, junto com distancia de mate e
-   centipawns, porque nao descrevem mais nada.
-2. `EP_loss = max(0, EP_antes - 0.5)`. Um empate que joga uma vitoria fora
-   reprova em `GATE_QUALITY_001` com o valor entregue a vista, e fica fora da
-   camada `near_brilliant` por exceder `safe_max_expected_points_loss`.
-3. `GATE_SOUNDNESS_001` e `GATE_STABILITY_001` sao aprovados com explicacao de
-   desfecho ("a partida termina aqui"), nunca `indeterminate` por falta de
-   busca: nao ha defesa nem continuacao a medir. Nenhum dos dois aprova o lance
-   por si; quem barra o empate ruim e a qualidade.
-
-Um empate que nao concede nada, com `EP_antes` proximo de `0.5`, continua
-selecionavel como `near_brilliant`. Nao havia vitoria a preservar.
-
-Buscas de melhor defesa e de estabilidade nao sao executadas em posicao
-terminal, de qualquer tipo.
-
-## Perfil por rating
-
-`strict` e o unico perfil implementado. `beginner` e `advanced` sao estrategias
-de configuracao futuras. Ate haver dataset calibrado, `--rating` selecionara
-configuracao documentada e a CLI deve deixar claro que o comportamento e
-aproximado.
+Na amostragem MultiPV, candidatos com `EP loss > max_ep_loss` sao descartados,
+e a selecao e feita por amostragem softmax com temperatura deterministica via semente uint64.
 
 ## Historico
 
@@ -267,5 +194,8 @@ aproximado.
 | --- | --- | --- |
 | `strict_v1` | 2026-08-12 | Definicao inicial dos sete portoes, mapeamentos de EP e pesos de pontuacao. |
 | `strict_v1` | 2026-08-13 | Fallback `near_brilliant` seguro antes da jogada normal do perfil. |
-| `strict_v1` | 2026-08-13 | Mate terminal confirma solidez/estabilidade; desempate quase brilhante prioriza qualidade objetiva. |
-| `strict_v1` | 2026-08-13 | `LEFT_HANGING` implementado; empate imediato vale `0.5` EP por regra do tabuleiro. Nenhum limiar alterado. Ver ADR 0008. |
+| `strict_v1` | 2026-08-13 | `LEFT_HANGING` implementado; empate imediato vale `0.5` EP por regra do tabuleiro. Ver ADR 0008. |
+| `strict_v2` | 2026-08-13 | Classificador troca-aware com concessao liquida, rejeicao de trocas limpas, 8 portoes obrigatorios e portao de nao obviedade. Ver ADR 0009. |
+| `opening_v1` | 2026-08-14 | Suite offline curada e amostragem MultiPV com limitacao de perda de EP e sementes deterministicas. Ver ADR 0010. |
+
+

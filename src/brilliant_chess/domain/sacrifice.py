@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from brilliant_chess.domain.exchange import ExchangeEvidence
 from brilliant_chess.domain.errors import DomainError
+from brilliant_chess.domain.exchange import ExchangeEvidence
 from brilliant_chess.domain.material import is_sacrificeable
 from brilliant_chess.domain.rule_set import SacrificeConfidenceWeights
 from brilliant_chess.domain.values import PieceType, ReasonCode, SacrificeKind

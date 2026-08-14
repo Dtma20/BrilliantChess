@@ -57,6 +57,22 @@ describe("api", () => {
     expect(fetchMock.mock.calls[0][0]).toBe("/api/match/a%20b%2Fc/step")
   })
 
+  it("sends pasted PGN to the local importer", async () => {
+    const fetchMock = respond({
+      initial_fen: "start",
+      moves_uci: ["e2e4"],
+      moves_san: ["e4"],
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await api.importPgn("1. e4 *")
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/pgn/import",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ pgn: "1. e4 *" }) }),
+    )
+  })
+
   it("surfaces the backend detail as the error message", async () => {
     vi.stubGlobal("fetch", respond({ detail: "Partida encerrada" }, 400))
 

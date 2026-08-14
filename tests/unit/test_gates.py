@@ -11,9 +11,9 @@ from brilliant_chess.domain.gates import (
     evaluate_gates,
     failed_gates,
     gate_legal,
+    gate_non_obviousness,
     gate_not_already_won,
     gate_not_bad_after,
-    gate_non_obviousness,
     gate_quality,
     gate_sacrifice,
     gate_sacrifice_v2,
@@ -266,3 +266,26 @@ def test_every_gate_id_is_reported_exactly_once(rules, gate_id):
         pytest.skip("strict_v1 nao inclui o portao v2")
     results = evaluate_gates(brilliant_inputs(), rules)
     assert [result.gate_id for result in results].count(gate_id) == 1
+
+
+def test_v1_gate_shape_is_preserved_and_v2_adds_only_non_obviousness(rules, rules_v2):
+    assert [gate.gate_id for gate in evaluate_gates(brilliant_inputs(), rules)] == [
+        GateId.LEGAL,
+        GateId.QUALITY,
+        GateId.SACRIFICE,
+        GateId.SOUNDNESS,
+        GateId.NOT_BAD_AFTER,
+        GateId.NOT_ALREADY_WON,
+        GateId.STABILITY,
+    ]
+    v2_gate_ids = [gate.gate_id for gate in evaluate_gates(brilliant_inputs(), rules_v2)]
+    assert v2_gate_ids == [
+        GateId.LEGAL,
+        GateId.QUALITY,
+        GateId.SACRIFICE,
+        GateId.SOUNDNESS,
+        GateId.NOT_BAD_AFTER,
+        GateId.NOT_ALREADY_WON,
+        GateId.STABILITY,
+        GateId.NON_OBVIOUS,
+    ]

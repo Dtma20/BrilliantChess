@@ -20,6 +20,14 @@ from brilliant_chess.domain.non_obviousness import (
     NonObviousnessCondition,
     NonObviousnessEvidence,
 )
+from brilliant_chess.domain.opening import (
+    OpeningConfig,
+    OpeningExitReason,
+    OpeningIdentity,
+    OpeningMode,
+    OpeningMoveAudit,
+    OpeningPhaseState,
+)
 from brilliant_chess.domain.sacrifice import NO_SACRIFICE, SacrificeEvidence
 from brilliant_chess.domain.scoring import BrilliantDecision, ScoreBreakdown
 from brilliant_chess.domain.values import (
@@ -315,3 +323,74 @@ def test_match_pgn_includes_custom_fen_and_unfinished_result(board):
     assert '[SetUp "1"]' in text
     assert f'[FEN "{fen}"]' in text
     assert '[Result "*"]' in text
+
+
+def test_match_pgn_includes_opening_headers_and_comments(board):
+    opening_audit = OpeningMoveAudit(
+        opening_mode=OpeningMode.EXPLORATORY,
+        source="suite",
+        seed=42,
+        opening_ply=1,
+        planned_exit_ply=6,
+        eco="B20",
+        name="Sicilian Defense",
+        variation="Bowdler Attack",
+    )
+    moves = (
+        MatchMove(
+            Color.WHITE,
+            "e2e4",
+            "e4",
+            SelectionKind.OPENING_EXPLORATION,
+            opening_audit=opening_audit,
+        ),
+        MatchMove(
+            Color.BLACK,
+            "c7c5",
+            "c5",
+            SelectionKind.OPENING_EXPLORATION,
+            opening_audit=replace(opening_audit, opening_ply=2),
+        ),
+    )
+    state = MatchState(
+        match_id="opening_match",
+        initial_fen=STARTING_FEN,
+        current_fen=STARTING_FEN,
+        white=MatchProfile("maximo", MatchPolicy.STRICT_V2),
+        black=MatchProfile("iniciante", MatchPolicy.NORMAL),
+        moves_uci=("e2e4", "c7c5"),
+        moves_san=("e4", "c5"),
+        moves=moves,
+        opening_config=OpeningConfig(mode=OpeningMode.EXPLORATORY),
+        opening_seed=42,
+        opening_identity=OpeningIdentity(
+            "sicilian_bowdler", "e4", "B20", "Sicilian Defense", "Bowdler Attack"
+        ),
+        opening_phase=OpeningPhaseState(
+            active=False,
+            mode=OpeningMode.EXPLORATORY,
+            seed=42,
+            planned_exit_ply=6,
+            completed_opening_plies=6,
+            current_phase="ended",
+            exit_reason=OpeningExitReason.PLANNED_EXIT,
+        ),
+        opening_dataset_version="suite_v1",
+    )
+    initial = board.view(STARTING_FEN, ())
+    current = board.view(STARTING_FEN, state.moves_uci)
+
+    text = build_match_pgn(state, initial, current, standard_fen=STARTING_FEN)
+
+    assert '[OpeningMode "exploratory"]' in text
+    assert '[OpeningSeed "42"]' in text
+    assert '[ECO "B20"]' in text
+    assert '[Opening "Sicilian Defense"]' in text
+    assert '[Variation "Bowdler Attack"]' in text
+    assert '[OpeningExitReason "planned_exit"]' in text
+    assert '[OpeningExitPly "6"]' in text
+    assert '[OpeningDatasetVersion "suite_v1"]' in text
+    assert "policy=opening_exploration" in text
+    assert "selection=opening_exploration" in text
+    assert "mode=exploratory" in text
+    assert "eco=B20" in text

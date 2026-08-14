@@ -10,7 +10,7 @@
  * 3. Nada é indexado direto a partir do que o servidor mandou.
  */
 
-import type { CandidateAudit, Color, Gate, SelectionKind, Wire } from "@/lib/api"
+import type { CandidateAudit, Color, Gate, MatchMove, SelectionKind, Wire } from "@/lib/api"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { PIECE_GLYPHS, SIDE_NAMES } from "@/lib/chess"
 import {
@@ -299,3 +299,55 @@ export function AuditDetail({ audit }: { audit: CandidateAudit }) {
     </div>
   )
 }
+
+export function OpeningDetail({ move }: { move: MatchMove }) {
+  const audit = move.opening_audit
+  if (!audit) {
+    return (
+      <div className="grid gap-2 text-[0.82rem] text-ink-3">
+        <p>Lance realizado durante a fase de abertura.</p>
+      </div>
+    )
+  }
+  return (
+    <div className="grid gap-3">
+      <div className="flex items-center justify-between border-b border-border-soft pb-2">
+        <span className="font-mono text-[0.78rem] font-semibold text-foreground">
+          {audit.eco} — {audit.name}
+        </span>
+        <span className="rounded bg-elevated px-1.5 py-0.5 font-mono text-[0.7rem] text-ink-3">
+          {audit.source === "suite" ? "Suíte offline" : "MultiPV"}
+        </span>
+      </div>
+
+      {audit.variation && (
+        <p className="text-[0.8rem] text-ink-2">
+          Variação: <span className="font-medium text-foreground">{audit.variation}</span>
+        </p>
+      )}
+
+      <ul className="m-0 list-none p-0 font-mono text-[0.74rem] text-ink-3">
+        <li className="py-0.5">
+          meio-lance = {audit.opening_ply} de {audit.planned_exit_ply} planejados
+        </li>
+        <li className="py-0.5">modo = {audit.opening_mode}</li>
+        <li className="py-0.5">semente = {audit.seed}</li>
+        {audit.candidate_rank !== null && audit.candidate_rank !== undefined && (
+          <li className="py-0.5">rank no motor = #{audit.candidate_rank}</li>
+        )}
+        {audit.candidate_ep_loss !== null && audit.candidate_ep_loss !== undefined && (
+          <li className="py-0.5">perda de EP = {audit.candidate_ep_loss.toFixed(4)}</li>
+        )}
+        {audit.quality_cutoff !== null && audit.quality_cutoff !== undefined && (
+          <li className="py-0.5">limiar de corte = {audit.quality_cutoff.toFixed(4)}</li>
+        )}
+        {audit.candidates_considered && audit.candidates_considered.length > 0 && (
+          <li className="py-0.5">
+            candidatas consideradas = {audit.candidates_considered.join(", ")}
+          </li>
+        )}
+      </ul>
+    </div>
+  )
+}
+

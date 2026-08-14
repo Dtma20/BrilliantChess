@@ -184,3 +184,71 @@ Checked for accidental collisions with existing sacrifice evidence:
 ## Concerns
 
 - `ExchangeTrace` defaults now use optional snapshots/candidate so `ExchangeEvidence.trace` can still use `default_factory=ExchangeTrace`. That keeps compatibility, but downstream strict_v2 consumers should treat those fields as populated only when a real trace was produced.
+
+## Fix round 1 — reviewer contract correction
+
+Reviewer finding:
+
+- `ExchangeTrace` must not permit structurally invalid instances
+- optional/sentinel behavior belongs on `ExchangeEvidence.trace`, not on `ExchangeTrace`
+
+### RED
+
+Added focused tests for:
+
+- every adapter-returned trace has populated `root`, `after_candidate`, `target_square`, and `candidate`
+- `ExchangeTrace()` without required fields is invalid
+- `ExchangeEvidence.trace` defaults to `None`
+
+Command:
+
+```bash
+uv run pytest tests/unit/test_board_service.py tests/unit/test_ports.py -q
+```
+
+Output:
+
+```text
+..........................F                                              [100%]
+================================== FAILURES ===================================
+_ test_exchange_trace_requires_populated_fields_and_evidence_defaults_to_no_trace _
+
+    def test_exchange_trace_requires_populated_fields_and_evidence_defaults_to_no_trace():
+>       with pytest.raises(TypeError):
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE TypeError
+
+tests\unit\test_ports.py:104: Failed
+=========================== short test summary info ===========================
+FAILED tests/unit/test_ports.py::test_exchange_trace_requires_populated_fields_and_evidence_defaults_to_no_trace
+```
+
+RED verified: the contract still allowed `ExchangeTrace()` with missing fields.
+
+### GREEN
+
+Changed:
+
+- `ExchangeTrace` fields are all required again:
+  - `root`
+  - `after_candidate`
+  - `target_square`
+  - `candidate`
+  - `acceptance_moves`
+- `ExchangeEvidence.trace` is now `ExchangeTrace | None = None`
+
+Command:
+
+```bash
+uv run pytest tests/unit/test_board_service.py tests/unit/test_ports.py -q
+```
+
+Output:
+
+```text
+...........................                                              [100%]
+```
+
+### En-passant note
+
+I did not add an explicit en-passant acceptance-trace test in this round. The exchange traversal is constrained to legal capture replies that land on the candidate target square. En-passant acceptance is only possible when the legal capture lands on the candidate destination while removing a pawn from a different square; I did not have a binding reviewer fixture for that exact contract-shaped exchange case, so I left the existing snapshot-level en-passant coverage in place rather than inventing a speculative trace fixture here.

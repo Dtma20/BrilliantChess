@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 
 from brilliant_chess.domain.errors import DomainError
 from brilliant_chess.domain.exchange import ExchangeEvidence
 from brilliant_chess.domain.models import AnalysisBudget, EngineIdentity, Move
 from brilliant_chess.domain.non_obviousness import NonObviousnessEvidence
+from brilliant_chess.domain.opening import (
+    OpeningConfig,
+    OpeningIdentity,
+    OpeningMoveAudit,
+    OpeningPhaseState,
+)
 from brilliant_chess.domain.scoring import BrilliantDecision
 from brilliant_chess.domain.strength import strength_by_key
 from brilliant_chess.domain.values import GAME_STATUS_TEXTS, Color, GameStatus
@@ -27,6 +33,7 @@ class SelectionKind(StrEnum):
     STRICT_V2 = "strict_v2"
     NEAR_BRILLIANT = "near_brilliant"
     FALLBACK = "fallback"
+    OPENING_EXPLORATION = "opening_exploration"
 
 
 @dataclass(frozen=True)
@@ -65,7 +72,8 @@ class MatchMove:
     uci: str
     san: str
     selection: SelectionKind
-    audit: MatchAudit | None
+    audit: MatchAudit | None = None
+    opening_audit: OpeningMoveAudit | None = None
 
 
 @dataclass(frozen=True)
@@ -79,6 +87,12 @@ class MatchState:
     moves_san: tuple[str, ...] = ()
     moves: tuple[MatchMove, ...] = ()
     max_plies: int = 200
+    opening_config: OpeningConfig | None = None
+    opening_seed: int | None = None
+    opening_identity: OpeningIdentity | None = None
+    opening_phase: OpeningPhaseState | None = None
+    opening_dataset_version: str = "suite_v1"
+    opening_usage_snapshot: dict[str, int] = field(default_factory=dict)
 
     @property
     def is_capped(self) -> bool:
@@ -88,12 +102,19 @@ class MatchState:
         return self.is_capped or current_view(board, self).status.is_finished
 
 
-def start_match(
+def start_match(  # noqa: PLR0913
     match_id: str,
     initial_fen: str,
     white: MatchProfile,
     black: MatchProfile,
+    *,
     max_plies: int = 200,
+    opening_config: OpeningConfig | None = None,
+    opening_seed: int | None = None,
+    opening_identity: OpeningIdentity | None = None,
+    opening_phase: OpeningPhaseState | None = None,
+    opening_dataset_version: str = "suite_v1",
+    opening_usage_snapshot: dict[str, int] | None = None,
 ) -> MatchState:
     strength_by_key(white.strength_key)
     strength_by_key(black.strength_key)
@@ -106,6 +127,12 @@ def start_match(
         white=white,
         black=black,
         max_plies=max_plies,
+        opening_config=opening_config,
+        opening_seed=opening_seed,
+        opening_identity=opening_identity,
+        opening_phase=opening_phase,
+        opening_dataset_version=opening_dataset_version,
+        opening_usage_snapshot=dict(opening_usage_snapshot or {}),
     )
 
 
@@ -117,12 +144,15 @@ def can_step(board: BoardService, state: MatchState) -> bool:
     return not state.is_finished(board)
 
 
-def record_move(
+def record_move(  # noqa: PLR0913
     board: BoardService,
     state: MatchState,
     move: Move,
     selection: SelectionKind,
-    audit: MatchAudit | None,
+    audit: MatchAudit | None = None,
+    *,
+    opening_audit: OpeningMoveAudit | None = None,
+    opening_phase: OpeningPhaseState | None = None,
 ) -> MatchState:
     if state.is_finished(board):
         raise DomainError("Partida encerrada")
@@ -136,13 +166,16 @@ def record_move(
         san=normalized.san or next_view.moves_san[-1],
         selection=selection,
         audit=audit,
+        opening_audit=opening_audit,
     )
+    new_phase = opening_phase if opening_phase is not None else state.opening_phase
     return replace(
         state,
         current_fen=next_view.position.fen,
         moves_uci=next_uci,
         moves_san=(*state.moves_san, match_move.san),
         moves=(*state.moves, match_move),
+        opening_phase=new_phase,
     )
 
 

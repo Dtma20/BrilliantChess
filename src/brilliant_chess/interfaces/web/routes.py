@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import random
+import secrets
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import Response
 
 from brilliant_chess.adapters.board.service import STARTING_FEN, PythonChessBoardService
+from brilliant_chess.adapters.game_source.pgn import parse_pgn
 from brilliant_chess.application import play_game, play_match
 from brilliant_chess.application.analyze_position import (
     AnalysisRequest,
@@ -31,11 +35,20 @@ from brilliant_chess.domain.errors import (
     BrilliantChessError,
     DomainError,
     EngineError,
+    GameSourceError,
     IllegalMoveError,
     InvalidFenError,
     InvalidMoveError,
 )
 from brilliant_chess.domain.models import AnalysisBudget, Move, Position
+from brilliant_chess.domain.opening import (
+    OpeningConfig,
+    OpeningExitReason,
+    OpeningIdentity,
+    OpeningMode,
+    OpeningMoveAudit,
+    OpeningPhaseState,
+)
 from brilliant_chess.domain.strength import STRENGTH_LEVELS, strength_by_key
 from brilliant_chess.domain.values import Color
 from brilliant_chess.interfaces.web.engine_pair_session import EnginePairSession
@@ -58,6 +71,8 @@ from brilliant_chess.interfaces.web.schemas import (
     MoveIn,
     NewGameIn,
     NewMatchIn,
+    PgnImportIn,
+    PgnImportOut,
     StrengthOut,
     analysis_out,
     board_out,
@@ -67,8 +82,13 @@ from brilliant_chess.interfaces.web.schemas import (
     gate_out,
     node_budgets_out,
     non_obviousness_out,
+    opening_config_out,
+    opening_identity_out,
+    opening_move_audit_out,
+    opening_phase_out,
     sacrifice_out,
 )
+from brilliant_chess.ports.board import BoardView
 from brilliant_chess.ports.engine import ChessEngine, PlayableEngine
 
 router = APIRouter(prefix="/api")
@@ -76,7 +96,7 @@ router = APIRouter(prefix="/api")
 #: Cor por rank da candidata. Verde e a melhor, como em tabuleiros conhecidos.
 ARROW_COLORS = ("#7fa96a", "#c9a227", "#949b8a", "#7f8579")
 
-_BAD_REQUEST = (InvalidFenError, InvalidMoveError, IllegalMoveError, DomainError)
+_BAD_REQUEST = (InvalidFenError, InvalidMoveError, IllegalMoveError, DomainError, GameSourceError)
 
 
 def get_board(request: Request) -> PythonChessBoardService:
@@ -178,12 +198,75 @@ def create_match(
         initial_fen = payload.initial_fen or STARTING_FEN
         board.view(initial_fen, ())
         lab = request.app.state.container.settings.web.lab
+
+        raw_mode = payload.opening.mode if payload.opening and payload.opening.mode else None
+        if raw_mode is not None:
+            try:
+                mode = OpeningMode(raw_mode)
+            except ValueError:
+                mode = lab.opening.default_mode
+        else:
+            mode = lab.opening.default_mode
+
+        provided_seed = payload.opening.seed if payload.opening else None
+        seed = provided_seed if provided_seed is not None else secrets.randbits(32)
+
+        opening_config = lab.opening.for_mode(mode, seed=seed)
+        if payload.opening and payload.opening.line_id:
+            opening_config = replace(opening_config, line_id=payload.opening.line_id)
+        opening_identity = None
+        opening_phase = None
+
+        if mode is not OpeningMode.OFF:
+            usage_snapshot = request.app.state.opening_session.usage_snapshot()
+            line, planned_exit, reason = request.app.state.opening_selector.choose(
+                initial_fen, opening_config, usage_counts=usage_snapshot
+            )
+            if line is not None:
+                request.app.state.opening_session.record_usage(line.line_id)
+                opening_identity = OpeningIdentity(
+                    line_id=line.line_id,
+                    family=line.family,
+                    eco=line.eco,
+                    name=line.name,
+                    variation=line.variation,
+                )
+                opening_phase = OpeningPhaseState(
+                    active=True,
+                    mode=mode,
+                    seed=seed,
+                    planned_exit_ply=planned_exit,
+                    completed_opening_plies=0,
+                    current_phase="suite",
+                    exit_reason=None,
+                    selected_identity=opening_identity,
+                )
+            else:
+                opening_phase = OpeningPhaseState(
+                    active=False,
+                    mode=mode,
+                    seed=seed,
+                    planned_exit_ply=0,
+                    completed_opening_plies=0,
+                    current_phase="ended",
+                    exit_reason=reason or OpeningExitReason.NO_COMPATIBLE_LINE,
+                    selected_identity=None,
+                )
+        else:
+            opening_phase = None
+
         state = play_match.start_match(
             match_id=store.new_id(),
             initial_fen=initial_fen,
             white=MatchProfile(payload.white.strength_key, payload.white.policy),
             black=MatchProfile(payload.black.strength_key, payload.black.policy),
             max_plies=lab.max_fullmoves * 2,
+            opening_config=opening_config,
+            opening_seed=seed,
+            opening_identity=opening_identity,
+            opening_phase=opening_phase,
+            opening_dataset_version="suite_v1",
+            opening_usage_snapshot=request.app.state.opening_session.usage_snapshot(),
         )
         return match_out(board, store.save(state))
 
@@ -212,6 +295,207 @@ def export_match_pgn(match_id: str, board: BoardDep, store: MatchStoreDep) -> Re
         )
 
 
+def _step_suite_phase(
+    board: PythonChessBoardService,
+    state: MatchState,
+    view: BoardView,
+    request: Request,
+    cfg: OpeningConfig,
+) -> MatchState:
+    current_ply = len(state.moves_uci)
+    identity = state.opening_phase.selected_identity if state.opening_phase else None
+    matching_line = next(
+        (
+            line_item
+            for line_item in request.app.state.opening_selector.lines
+            if identity and line_item.line_id == identity.line_id
+        ),
+        None,
+    )
+    if (
+        matching_line is not None
+        and state.opening_phase is not None
+        and current_ply < len(matching_line.moves_uci)
+        and current_ply < state.opening_phase.planned_exit_ply
+    ):
+        move_uci = matching_line.moves_uci[current_ply]
+        norm = board.normalize_move(view.position, move_uci)
+        opening_audit = OpeningMoveAudit(
+            opening_mode=state.opening_phase.mode,
+            seed=state.opening_phase.seed,
+            eco=matching_line.eco,
+            name=matching_line.name,
+            variation=matching_line.variation,
+            source="suite",
+            candidate_rank=1,
+            candidate_ep_loss=0.0,
+            sampling_weight=1.0,
+            candidates_considered=(move_uci,),
+            quality_cutoff=cfg.max_ep_loss,
+            search_budget=AnalysisBudget(nodes=cfg.budget_nodes),
+            opening_ply=current_ply + 1,
+            planned_exit_ply=state.opening_phase.planned_exit_ply,
+            sampling_mode=None,
+            experimental=cfg.experimental,
+        )
+        next_ply = current_ply + 1
+        if next_ply >= state.opening_phase.planned_exit_ply:
+            if cfg.extra_plies > 0:
+                new_phase = replace(
+                    state.opening_phase,
+                    completed_opening_plies=next_ply,
+                    current_phase="multipv_sampling",
+                )
+            else:
+                new_phase = replace(
+                    state.opening_phase,
+                    active=False,
+                    completed_opening_plies=next_ply,
+                    current_phase="ended",
+                    exit_reason=OpeningExitReason.PLANNED_EXIT,
+                )
+        else:
+            new_phase = replace(
+                state.opening_phase,
+                completed_opening_plies=next_ply,
+            )
+        return play_match.record_move(
+            board,
+            state,
+            norm,
+            SelectionKind.OPENING_EXPLORATION,
+            audit=None,
+            opening_audit=opening_audit,
+            opening_phase=new_phase,
+        )
+
+    if state.opening_phase is None:
+        return state
+
+    if cfg.extra_plies > 0:
+        return replace(
+            state,
+            opening_phase=replace(state.opening_phase, current_phase="multipv_sampling"),
+        )
+    return replace(
+        state,
+        opening_phase=replace(
+            state.opening_phase,
+            active=False,
+            current_phase="ended",
+            exit_reason=(
+                OpeningExitReason.PLANNED_EXIT
+                if current_ply >= state.opening_phase.planned_exit_ply
+                else OpeningExitReason.LINE_EXHAUSTED
+            ),
+        ),
+    )
+
+
+def _step_multipv_phase(  # noqa: PLR0913
+    board: PythonChessBoardService,
+    state: MatchState,
+    view: BoardView,
+    request: Request,
+    pair: EnginePairSession,
+    *,
+    cfg: OpeningConfig,
+) -> MatchState:
+    if state.opening_phase is None or not state.opening_phase.active:
+        return state
+    current_ply = len(state.moves_uci)
+    total_target_plies = state.opening_phase.planned_exit_ply + cfg.extra_plies
+    if current_ply >= total_target_plies:
+        return state
+
+    _profile, engine = _profile_and_engine(state, view.position.side_to_move, pair)
+    rng = random.Random(state.opening_phase.seed + current_ply)
+    identity = state.opening_phase.selected_identity
+    move, opening_audit, exit_reason = request.app.state.opening_selector.sample_multipv_move(
+        view.position,
+        engine,
+        cfg,
+        rng,
+        opening_ply=current_ply + 1,
+        planned_exit_ply=total_target_plies,
+        eco=identity.eco if identity else "",
+        name=identity.name if identity else "",
+        variation=identity.variation if identity else None,
+    )
+    if move is not None and opening_audit is not None:
+        next_ply = current_ply + 1
+        if next_ply >= total_target_plies:
+            new_phase = replace(
+                state.opening_phase,
+                active=False,
+                completed_opening_plies=next_ply,
+                current_phase="ended",
+                exit_reason=OpeningExitReason.PLANNED_EXIT,
+            )
+        else:
+            new_phase = replace(
+                state.opening_phase,
+                completed_opening_plies=next_ply,
+            )
+        return play_match.record_move(
+            board,
+            state,
+            move,
+            SelectionKind.OPENING_EXPLORATION,
+            audit=None,
+            opening_audit=opening_audit,
+            opening_phase=new_phase,
+        )
+
+    return replace(
+        state,
+        opening_phase=replace(
+            state.opening_phase,
+            active=False,
+            current_phase="ended",
+            exit_reason=exit_reason or OpeningExitReason.NO_ACCEPTABLE_CANDIDATE,
+        ),
+    )
+
+
+def _step_opening_move(
+    board: PythonChessBoardService,
+    state: MatchState,
+    view: BoardView,
+    request: Request,
+    pair: EnginePairSession,
+) -> MatchState | None:
+    if state.opening_phase is None or not state.opening_phase.active:
+        return None
+    if view.status.is_finished:
+        ended_phase = replace(
+            state.opening_phase,
+            active=False,
+            current_phase="ended",
+            exit_reason=OpeningExitReason.TERMINAL_POSITION,
+        )
+        return replace(state, opening_phase=ended_phase)
+
+    cfg = state.opening_config or request.app.state.container.settings.web.lab.opening.for_mode(
+        OpeningMode.EXPLORATORY
+    )
+
+    initial_plies = len(state.moves_uci)
+    if state.opening_phase.current_phase == "suite":
+        state = _step_suite_phase(board, state, view, request, cfg)
+        if len(state.moves_uci) > initial_plies:
+            return state
+
+    if (
+        state.opening_phase is not None
+        and state.opening_phase.active
+        and state.opening_phase.current_phase == "multipv_sampling"
+    ):
+        return _step_multipv_phase(board, state, view, request, pair, cfg=cfg)
+
+    return state
+
+
 @router.post("/match/{match_id}/step")
 def step_match(
     match_id: str,
@@ -225,6 +509,17 @@ def step_match(
         view = play_match.current_view(board, state)
         if not play_match.can_step(board, state):
             raise DomainError("Partida encerrada")
+
+        if state.opening_phase is not None and state.opening_phase.active:
+            opening_state = _step_opening_move(board, state, view, request, pair)
+            if opening_state is not None:
+                if len(opening_state.moves_uci) > len(state.moves_uci):
+                    return match_out(board, store.save(opening_state))
+                state = store.save(opening_state)
+                view = play_match.current_view(board, state)
+                if not play_match.can_step(board, state):
+                    return match_out(board, state)
+
         profile, engine = _profile_and_engine(state, view.position.side_to_move, pair)
         is_strict = profile.policy in {
             play_match.MatchPolicy.STRICT_V1,
@@ -268,11 +563,7 @@ def step_match(
             move = cast(PlayableEngine, engine).play_move(
                 view.position, strength_by_key(profile.strength_key)
             )
-            selection = (
-                SelectionKind.FALLBACK
-                if is_strict
-                else SelectionKind.NORMAL
-            )
+            selection = SelectionKind.FALLBACK if is_strict else SelectionKind.NORMAL
         audit = None if audit_selected is None else _match_audit(audit_selected)
         return match_out(
             board, store.save(play_match.record_move(board, state, move, selection, audit))
@@ -326,6 +617,18 @@ def board_state(payload: BoardIn, board: BoardDep) -> BoardOut:
     """Aplica lances a uma FEN e devolve a posicao resultante e os lances legais."""
     with translated_errors():
         return board_out(board.view(payload.fen or STARTING_FEN, payload.moves))
+
+
+@router.post("/pgn/import")
+def import_pgn(payload: PgnImportIn) -> PgnImportOut:
+    """Valida um PGN e devolve a linha principal pronta para navegacao."""
+    with translated_errors():
+        parsed = parse_pgn(payload.pgn)
+        return PgnImportOut(
+            initial_fen=parsed.initial_fen,
+            moves_uci=list(parsed.moves_uci),
+            moves_san=list(parsed.moves_san),
+        )
 
 
 @router.post("/analyze")
@@ -419,6 +722,11 @@ def match_out(board: PythonChessBoardService, state: MatchState) -> MatchOut:
         moves=[_match_move_out(move) for move in state.moves],
         result_text=play_match.result_text(board, state),
         can_step=play_match.can_step(board, state),
+        opening=opening_config_out(state.opening_config),
+        opening_seed=state.opening_seed,
+        opening_identity=opening_identity_out(state.opening_identity),
+        opening_phase=opening_phase_out(state.opening_phase),
+        opening_dataset_version=state.opening_dataset_version,
     )
 
 
@@ -438,6 +746,7 @@ def _match_move_out(move: play_match.MatchMove) -> MatchMoveOut:
         selection=move.selection,
         fallback=move.selection is SelectionKind.FALLBACK,
         audit=None if move.audit is None else _audit_out(move.audit, move.uci, move.san),
+        opening_audit=opening_move_audit_out(move.opening_audit),
     )
 
 

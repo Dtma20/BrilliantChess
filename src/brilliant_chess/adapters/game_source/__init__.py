@@ -1,0 +1,1 @@
+"""Fontes locais de partidas."""

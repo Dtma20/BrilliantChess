@@ -53,15 +53,26 @@ iniciante nao contamine a analise seguinte. Ha teste de integracao para isso.
 
 ## Estagios de analise
 
-1. **Discovery** — MultiPV amplo, orcamento moderado, encontra candidatas.
-2. **Confirmation** — cada candidata promissora e reanalisada isoladamente com
+1. **Shallow** (`strict_v2`) — MultiPV 5 com orcamento de 5.000 nos para medir rank e
+   pontos esperados iniciais e fundamentar o portao de nao obviedade (`GATE_NON_OBVIOUS_001`).
+2. **Discovery** — MultiPV amplo, orcamento moderado, encontra candidatas.
+3. **Confirmation** — cada candidata promissora e reanalisada isoladamente com
    `root_moves=[candidata]` e orcamento maior. O rank usado pelos portoes vem
    daqui, nunca do MultiPV de discovery.
-3. **Stability** — candidatas proximas de limiar recebem orcamento maior; sem
+4. **Best Defense** — busca da melhor resposta adversaria para avaliar solidez do sacrificio.
+5. **Stability** — candidatas proximas de limiar recebem orcamento maior; sem
    esse estagio, `GATE_STABILITY_001` fica indeterminado em vez de aprovado.
 
-Os orcamentos por estagio vem de `Container.budget_for` e sao sempre expressos
-em nos, para reprodutibilidade.
+Os orcamentos por estagio vem de `Container.budget_for` ou da configuracao do
+laboratorio e sao sempre expressos em nos, para reprodutibilidade.
+
+## Resolucao de regras
+
+O container carrega o perfil historico `strict_v1.yaml` e o perfil atual
+`strict_v2.yaml`. A aplicacao resolve o conjunto de regras via
+`container.rule_set_for(policy)`, garantindo que chamadas com `strict_v1`
+mantenham a semantica de 7 portoes e que `strict_v2` utilize os 8 portoes
+com avaliacao de trocas (`BoardService.exchange_lines`) e nao obviedade.
 
 ## Ponto de vista
 
@@ -70,8 +81,18 @@ aplicar a candidata o lado a jogar muda; `NormalizedEvaluation.flipped()` existe
 para tornar essa troca explicita e testavel, em vez de deixar o sinal inverter
 silenciosamente. Ha testes para brancas e pretas.
 
+## Exploracao de abertura
+
+A camada de aplicacao conta com o servico `OpeningSelector` e o gerenciador
+`OpeningSessionTracker` (na camada web). A suite de aberturas curada reside em
+`adapters/opening_suite/` como dados JSON puros. Quando o duelo inicia em modo
+exploratorio, o motor reproduz os lances da suite e, ao final da linha planejada,
+realiza amostragem MultiPV com corte de perda de EP (`max_ep_loss`) e temperatura
+softmax deterministica via semente `uint64`.
+
 ## Arquivos e tamanho
 
 Meta de ate 250 linhas por modulo de producao, limite suave de 400. Uma
 responsabilidade principal por arquivo. Sem `utils.py`, `helpers.py` ou
 `common.py`.
+

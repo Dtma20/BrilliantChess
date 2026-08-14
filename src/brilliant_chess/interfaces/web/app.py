@@ -21,11 +21,14 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from brilliant_chess.adapters.board.service import PythonChessBoardService
+from brilliant_chess.adapters.openings.suite import load_opening_suite
+from brilliant_chess.application.opening_exploration import OpeningSelector
 from brilliant_chess.bootstrap.container import Container, build_container
 from brilliant_chess.interfaces.web.engine_pair_session import EnginePairSession
 from brilliant_chess.interfaces.web.engine_session import EngineSession
 from brilliant_chess.interfaces.web.game_store import GameStore
 from brilliant_chess.interfaces.web.match_store import MatchStore
+from brilliant_chess.interfaces.web.opening_session import OpeningSession
 from brilliant_chess.interfaces.web.routes import router
 
 WEB_DIST_ENV_VAR = "BRILLIANT_CHESS_WEB_DIST"
@@ -104,6 +107,12 @@ def create_app(container: Container | None = None) -> FastAPI:
     app.state.board = PythonChessBoardService()
     app.state.games = GameStore()
     app.state.matches = MatchStore()
+    app.state.opening_session = OpeningSession()
+    try:
+        suite = load_opening_suite()
+    except Exception:
+        suite = ()
+    app.state.opening_selector = OpeningSelector(suite, app.state.board)
     app.state.engine_session = EngineSession(resolved.settings)
     app.state.engine_pair_session = EnginePairSession(resolved.settings)
     app.include_router(router)
