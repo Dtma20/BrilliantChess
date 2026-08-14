@@ -94,6 +94,26 @@ def test_match_pgn_identifies_profiles_and_selection_comments(board):
     assert "{policy=strict_v1 selection=fallback reason=no_eligible_candidate}" in text
 
 
+def test_match_pgn_labels_a_strict_v2_fallback_with_the_moving_profile_policy(board):
+    state = replace(
+        match_state(),
+        white=MatchProfile("maximo", MatchPolicy.STRICT_V2),
+        moves=(
+            MatchMove(Color.WHITE, "e2e4", "e4", SelectionKind.FALLBACK, None),
+            *match_state().moves[1:],
+        ),
+    )
+
+    text = build_match_pgn(
+        state,
+        board.view(STARTING_FEN, ()),
+        board.view(STARTING_FEN, state.moves_uci),
+        standard_fen=STARTING_FEN,
+    )
+
+    assert "{policy=strict_v2 selection=fallback reason=no_eligible_candidate}" in text
+
+
 def test_cap_uses_draw_result_and_experimental_comment(board):
     state = match_state(capped=True)
     initial = board.view(STARTING_FEN, ())
@@ -168,11 +188,15 @@ def test_match_pgn_records_compact_v2_provenance_without_changing_v1_comments(bo
         material_after_best_acceptance=-0.1,
         material_captured_by_candidate=3.2,
         material_lost_by_mover=3.3,
+        material_captured_later_by_mover=1.7,
         net_material_concession=0.1,
         sequence_uci=("a2a3", "b4a3"),
         sequence_san=("a3", "Bxa3"),
         clean_trade=True,
         obvious_recapture=True,
+        temporary_offer=True,
+        favorable_trade=True,
+        xray_recapture=True,
     )
     audit = MatchAudit(
         decision=BrilliantDecision(
@@ -224,8 +248,27 @@ def test_match_pgn_records_compact_v2_provenance_without_changing_v1_comments(bo
 
     assert "policy=strict_v2 selection=strict_v2" in text
     assert "exchange=clean_equal_trade" in text
+    assert "ex_before=0.00" in text
+    assert "ex_after=3.20" in text
+    assert "ex_accept=-0.10" in text
+    assert "ex_captured=3.20" in text
+    assert "ex_lost=3.30" in text
+    assert "ex_later=1.70" in text
+    assert "ex_net=0.10" in text
+    assert "ex_uci=a2a3,b4a3" in text
+    assert "ex_san=a3,Bxa3" in text
+    assert "ex_clean=yes" in text
+    assert "ex_obvious=yes" in text
+    assert "ex_temporary=yes" in text
+    assert "ex_favorable=yes" in text
+    assert "ex_xray=yes" in text
     assert "non_obvious=ep_improvement" in text
+    assert "shallow_ep=0.5100" in text
+    assert "deep_ep=0.6000" in text
+    assert "shallow_measure_nodes=5000" in text
+    assert "shallow_measure_multipv=5" in text
     assert "detector=exchange_aware_v1" in text
+    assert "binary_sha256=abc" in text
     assert "nnue=nn-123" in text
     assert "nodes=shallow:5000,discovery:80000,confirmation:200000" in text
 

@@ -13,6 +13,7 @@ from brilliant_chess.bootstrap.config import (
 from brilliant_chess.bootstrap.container import build_container
 from brilliant_chess.domain.errors import ConfigurationError
 from brilliant_chess.domain.values import AnalysisStage
+from brilliant_chess.interfaces.web.schemas import NewMatchIn
 
 STRICT_CONFIG = Path("config/strict_v1.yaml")
 STRICT_V2_CONFIG = Path("config/strict_v2.yaml")
@@ -100,3 +101,7 @@ def test_lab_config_uses_fixed_node_budgets():
     assert lab.strict_budget().stability is not None
     assert lab.strict_budget().stability.nodes == 400_000
     assert lab.strict_budget().max_candidates == 6
+
+
+def test_omitted_api_match_policy_remains_strict_v1():
+    assert NewMatchIn().white.policy.value == "strict_v1"

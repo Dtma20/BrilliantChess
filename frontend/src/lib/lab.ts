@@ -2,8 +2,8 @@
  * Vocabulário do laboratório.
  *
  * As quatro marcas de escolha se distinguem por glifo, por matiz e por texto,
- * nunca só por cor. Os sete portões aparecem sempre na mesma ordem, que é a
- * ordem de `domain/gates.py`.
+ * nunca só por cor. Cada regra aparece com seu próprio catálogo de portões,
+ * na ordem definida por `domain/gates.py`.
  *
  * Toda leitura de valor vindo do servidor passa por uma função com padrão de
  * reserva. Um servidor mais novo pode mandar um `selection` ou um `status` que
@@ -117,6 +117,19 @@ export const GATES: GateMeta[] = [
   { id: "GATE_STABILITY_001", name: "Estabilidade", tile: "E", relation: "≤" },
   { id: "GATE_NON_OBVIOUS_001", name: "Não óbvia", tile: "N", relation: null },
 ]
+
+export const STRICT_V1_GATES = GATES.slice(0, 7)
+export const STRICT_V2_GATES = GATES
+
+export function gatesForRuleSet(ruleSetVersion: Wire<string> | null | undefined): GateMeta[] {
+  return ruleSetVersion === "strict_v1" ? STRICT_V1_GATES : STRICT_V2_GATES
+}
+
+export function labDefaultPolicy(
+  configured: Wire<"strict_v1" | "strict_v2"> | null | undefined,
+): "strict_v1" | "strict_v2" {
+  return configured === "strict_v1" ? "strict_v1" : "strict_v2"
+}
 
 const GATE_GLYPHS: Record<GateStatus, string> = {
   passed: "✓",

@@ -55,8 +55,14 @@ const AUDIT: CandidateAudit = {
 }
 
 describe("GateRail", () => {
-  it("always shows the eight slots, in order", () => {
-    render(<GateRail gates={GATES} />)
+  it("shows seven slots for a historical strict_v1 audit", () => {
+    render(<GateRail gates={GATES} ruleSetVersion="strict_v1" />)
+
+    expect(screen.getAllByRole("img")).toHaveLength(7)
+  })
+
+  it("shows eight slots for a strict_v2 audit", () => {
+    render(<GateRail gates={GATES} ruleSetVersion="strict_v2" />)
 
     expect(screen.getAllByRole("img")).toHaveLength(8)
   })
@@ -160,6 +166,7 @@ describe("AuditDetail", () => {
     render(<AuditDetail audit={AUDIT} />)
 
     expect(screen.getByText("72.4")).toBeInTheDocument()
+    expect(screen.getAllByRole("img")).toHaveLength(7)
     expect(screen.getByText("Portões e medidas")).toBeInTheDocument()
     expect(screen.queryByText("EP_loss=0.0031")).not.toBeInTheDocument()
   })

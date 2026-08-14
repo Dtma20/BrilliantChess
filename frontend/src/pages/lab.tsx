@@ -47,7 +47,7 @@ import {
   type Strength,
 } from "@/lib/api"
 import { SIDE_NAMES, kingSquare } from "@/lib/chess"
-import { plieLabel, selectionCounts, selectionMeta } from "@/lib/lab"
+import { labDefaultPolicy, plieLabel, selectionCounts, selectionMeta } from "@/lib/lab"
 import { cn } from "@/lib/utils"
 
 type DeskState = "idle" | "thinking" | "paused" | "review" | "done" | "capped" | "error"
@@ -97,6 +97,10 @@ export function LabPage() {
       .then(([lab, levels]) => {
         setSettings(lab)
         setStrengths(levels)
+        setWhite((current) => ({
+          ...current,
+          policy: labDefaultPolicy(lab.strict_policy),
+        }))
       })
       .catch((cause: Error) => setError(cause.message))
   }, [])

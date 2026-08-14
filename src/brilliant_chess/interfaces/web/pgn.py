@@ -107,7 +107,7 @@ def _selection_comment(state: play_match.MatchState, move: play_match.MatchMove)
     if move.selection is play_match.SelectionKind.NORMAL:
         return "{policy=normal selection=normal}"
     if move.selection is play_match.SelectionKind.FALLBACK:
-        return "{policy=strict_v1 selection=fallback reason=no_eligible_candidate}"
+        return f"{{policy={profile.policy.value} selection=fallback reason=no_eligible_candidate}}"
     if move.audit is None:
         return f"{{policy={profile.policy.value} selection={move.selection.value}}}"
     fields = [
@@ -139,7 +139,8 @@ def _evidence_fields(audit: play_match.MatchAudit) -> list[str]:
         fields.append("unmet=" + ",".join(unmet))
     if audit.terminal_status is not None:
         fields.append(f"end={audit.terminal_status.value}")
-    fields.extend(_v2_evidence_fields(audit))
+    if audit.decision.rule_set_version == "strict_v2":
+        fields.extend(_v2_evidence_fields(audit))
     return fields
 
 
@@ -150,24 +151,48 @@ def _v2_evidence_fields(audit: play_match.MatchAudit) -> list[str]:
         fields.append(f"exchange={exchange.disposition.value}")
         fields.append(f"net_concession={exchange.net_material_concession:.2f}")
         fields.append(f"clean_trade={'yes' if exchange.clean_trade else 'no'}")
+        fields.extend(
+            (
+                f"ex_before={exchange.material_before:.2f}",
+                f"ex_after={exchange.material_immediately_after:.2f}",
+                f"ex_accept={_optional_measure(exchange.material_after_best_acceptance)}",
+                f"ex_captured={exchange.material_captured_by_candidate:.2f}",
+                f"ex_lost={exchange.material_lost_by_mover:.2f}",
+                f"ex_later={exchange.material_captured_later_by_mover:.2f}",
+                f"ex_net={exchange.net_material_concession:.2f}",
+                f"ex_uci={_sequence_value(exchange.sequence_uci)}",
+                f"ex_san={_sequence_value(exchange.sequence_san)}",
+                f"ex_clean={'yes' if exchange.clean_trade else 'no'}",
+                f"ex_obvious={'yes' if exchange.obvious_recapture else 'no'}",
+                f"ex_temporary={'yes' if exchange.temporary_offer else 'no'}",
+                f"ex_favorable={'yes' if exchange.favorable_trade else 'no'}",
+                f"ex_xray={'yes' if exchange.xray_recapture else 'no'}",
+            )
+        )
         if exchange.sequence_uci:
             fields.append("exchange_line=" + ",".join(exchange.sequence_uci))
     if audit.non_obviousness is not None:
         evidence = audit.non_obviousness
         condition = "none" if evidence.condition is None else evidence.condition.value
         fields.append(f"non_obvious={condition}")
-        if evidence.shallow_rank is not None:
-            fields.append(f"shallow_rank={evidence.shallow_rank}")
-        if evidence.deep_rank is not None:
-            fields.append(f"deep_rank={evidence.deep_rank}")
-        if evidence.expected_points_improvement is not None:
-            fields.append(f"ep_improvement={evidence.expected_points_improvement:.4f}")
+        fields.extend(
+            (
+                f"shallow_rank={_optional_int(evidence.shallow_rank)}",
+                f"deep_rank={_optional_int(evidence.deep_rank)}",
+                f"shallow_ep={_optional_measure(evidence.shallow_expected_points, 4)}",
+                f"deep_ep={_optional_measure(evidence.deep_expected_points, 4)}",
+                f"ep_improvement={_optional_measure(evidence.expected_points_improvement, 4)}",
+                f"shallow_measure_nodes={_optional_int(evidence.shallow_nodes)}",
+                f"shallow_measure_multipv={_optional_int(evidence.shallow_multipv)}",
+            )
+        )
     if audit.detector_version is not None:
         fields.append(f"detector={audit.detector_version}")
     if audit.engine_identity is not None:
         identity = audit.engine_identity
         fields.append(f"engine={identity.name}@{identity.version}")
         fields.append(f"nnue={identity.nnue_name or 'unknown'}")
+        fields.append(f"binary_sha256={identity.binary_sha256}")
     nodes = _node_fields(audit)
     if nodes:
         fields.append("nodes=" + ",".join(nodes))
@@ -182,10 +207,26 @@ def _node_fields(audit: play_match.MatchAudit) -> list[str]:
         ("best_defense", audit.best_defense_budget),
         ("stability", audit.stability_budget),
     )
-    fields = [f"{name}:{budget.nodes}" for name, budget in values if budget is not None]
-    if audit.shallow_multipv is not None:
-        fields.append(f"shallow_multipv:{audit.shallow_multipv}")
+    if not any(budget is not None for _, budget in values) and audit.shallow_multipv is None:
+        return []
+    fields = [
+        f"{name}:{_optional_int(None if budget is None else budget.nodes)}"
+        for name, budget in values
+    ]
+    fields.append(f"shallow_multipv:{_optional_int(audit.shallow_multipv)}")
     return fields
+
+
+def _optional_measure(value: float | None, places: int = 2) -> str:
+    return "none" if value is None else f"{value:.{places}f}"
+
+
+def _optional_int(value: int | None) -> str:
+    return "none" if value is None else str(value)
+
+
+def _sequence_value(values: tuple[str, ...]) -> str:
+    return "none" if not values else ",".join(values)
 
 
 def _result(status: GameStatus, side_to_move: Color) -> str:

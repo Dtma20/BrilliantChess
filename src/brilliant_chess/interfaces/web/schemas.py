@@ -42,7 +42,7 @@ class MatchProfileIn(_Model):
 
 class NewMatchIn(_Model):
     white: MatchProfileIn = MatchProfileIn(
-        strength_key="maximo", policy=play_match.MatchPolicy.STRICT_V2
+        strength_key="maximo", policy=play_match.MatchPolicy.STRICT_V1
     )
     black: MatchProfileIn = MatchProfileIn(
         strength_key="iniciante", policy=play_match.MatchPolicy.NORMAL

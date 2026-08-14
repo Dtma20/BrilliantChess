@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest"
 import type { CandidateAudit, Gate, MatchMove } from "@/lib/api"
 import {
   GATES,
+  gatesForRuleSet,
   SELECTION_META,
   SELECTION_ORDER,
   UNKNOWN_SELECTION_META,
   evidenceSentences,
   formatMeasure,
+  labDefaultPolicy,
   gateGlyph,
   gateTone,
   gateWord,
@@ -53,6 +55,13 @@ describe("GATES", () => {
     ])
   })
 
+  it("keeps seven historical gates and eight v2 gates distinct", () => {
+    expect(gatesForRuleSet("strict_v1")).toHaveLength(7)
+    expect(gatesForRuleSet("strict_v1").at(-1)?.id).toBe("GATE_STABILITY_001")
+    expect(gatesForRuleSet("strict_v2")).toHaveLength(8)
+    expect(gatesForRuleSet("strict_v2").at(-1)?.id).toBe("GATE_NON_OBVIOUS_001")
+  })
+
   /* Estes operadores são copiados de `domain/gates.py`. Só `not_already_won`
      compara com `<` estrito; mostrar `≤` faz "1.0000 ≤ 0.9500 reprovado"
      parecer contradição na tela. */
@@ -78,6 +87,14 @@ describe("SELECTION_META", () => {
   it("gives every selection a distinct mark, so colour is never the only cue", () => {
     const marks = Object.values(SELECTION_META).map((meta) => meta.mark)
     expect(new Set(marks).size).toBe(marks.length)
+  })
+})
+
+describe("labDefaultPolicy", () => {
+  it("uses the configured strict policy and falls back safely to v2", () => {
+    expect(labDefaultPolicy("strict_v1")).toBe("strict_v1")
+    expect(labDefaultPolicy("strict_v2")).toBe("strict_v2")
+    expect(labDefaultPolicy(undefined)).toBe("strict_v2")
   })
 })
 

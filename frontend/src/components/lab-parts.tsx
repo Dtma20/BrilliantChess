@@ -14,7 +14,7 @@ import type { CandidateAudit, Color, Gate, SelectionKind, Wire } from "@/lib/api
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { PIECE_GLYPHS, SIDE_NAMES } from "@/lib/chess"
 import {
-  GATES,
+  gatesForRuleSet,
   SELECTION_ORDER,
   evidenceSentences,
   formatMeasure,
@@ -108,13 +108,20 @@ export function SelectionLegend() {
 }
 
 /**
- * Régua de portões: sete células fixas, inicial do portão mais o glifo do
- * resultado. É o carimbo de inspeção desta política e fica sempre à vista.
+ * Régua de portões: uma célula por portão da regra, inicial do portão mais o
+ * glifo do resultado. É o carimbo de inspeção desta política e fica sempre à vista.
  */
-export function GateRail({ gates }: { gates: Gate[] }) {
+export function GateRail({
+  gates,
+  ruleSetVersion = "strict_v2",
+}: {
+  gates: Gate[]
+  ruleSetVersion?: string
+}) {
+  const catalog = gatesForRuleSet(ruleSetVersion)
   return (
     <div className="flex gap-[3px]">
-      {GATES.map((meta) => {
+      {catalog.map((meta) => {
         const gate = gates.find((item) => item.gate_id === meta.id)
         const status = gate?.status ?? "indeterminate"
         const tone = gateTone(status)
@@ -246,6 +253,7 @@ export function EvidenceList({ audit }: { audit: CandidateAudit }) {
 }
 
 export function AuditDetail({ audit }: { audit: CandidateAudit }) {
+  const catalog = gatesForRuleSet(audit.rule_set_version)
   return (
     <div className="grid gap-3">
       <div className="flex items-end gap-2.5">
@@ -260,12 +268,12 @@ export function AuditDetail({ audit }: { audit: CandidateAudit }) {
         )}
       </div>
 
-      <GateRail gates={audit.gates} />
+      <GateRail gates={audit.gates} ruleSetVersion={audit.rule_set_version} />
 
       <EvidenceList audit={audit} />
 
       <Drawer title="Portões e medidas">
-        {GATES.map((meta) => {
+        {catalog.map((meta) => {
           const gate = audit.gates.find((item) => item.gate_id === meta.id)
           if (!gate) return null
           return <GateRow key={meta.id} gate={gate} name={meta.name} relation={meta.relation} />

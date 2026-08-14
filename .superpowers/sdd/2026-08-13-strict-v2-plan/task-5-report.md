@@ -30,3 +30,19 @@ The repository-wide `uv run ruff format --check .` remains blocked by pre-existi
 ## Preservation and follow-up
 
 The PGN/FEN import files, protected laboratory layout changes, analysis page/setup changes, and the existing Task 2 report remain working-tree-only. The staged shared-file hunks were audited against `HEAD` and contain only Task 5 changes. Next planned work remains opening exploration; it is intentionally not included here.
+
+## Fix round — Luna reviewer findings
+
+- Fallback PGN comments now derive `policy` from the moving side, preserving the historical v1 text and labeling v2 fallbacks correctly.
+- The laboratory selects its seven-gate historical v1 catalog or eight-gate v2 catalog from the audit rule-set version; the protected full-width start button and four-secondary-button layout remain unchanged.
+- v2 PGN comments now include compact exchange balances/sequences/flags, non-obviousness EP/rank measurements, detector and engine/NNUE identity including `binary_sha256`, and node budgets. v1 evidence comments remain gated out.
+- Omitted API match policy is strict_v1 again. The laboratory initializes its strict policy from `/api/lab` with a strict_v2 fallback.
+
+TDD regressions failed first for the hard-coded fallback, missing v2 keys, v2 API default, and global eight-gate UI; they passed after the focused fixes.
+
+Fresh fix-round verification:
+
+- `uv run pytest tests/unit/test_config.py tests/unit/test_web_api.py tests/unit/test_match_pgn.py tests/unit/test_play_match.py -q` — passed.
+- `npm test` — passed (55 tests).
+- `npm run typecheck` — passed.
+- `npm run lint` — passed with the four existing Fast Refresh warnings.
